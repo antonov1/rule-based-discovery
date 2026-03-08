@@ -1,6 +1,6 @@
 from typing import List
 
-def merge_groups(self, groups: List[set], a : str, b : str) -> List[set]:
+def merge_groups(groups: List[set], a : str, b : str) -> List[set]:
     # Used to detect pairwise unreachable nodes
     # As per Robust Process Mining with Guarantees
     # S. Leemans

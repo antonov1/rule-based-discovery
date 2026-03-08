@@ -1,0 +1,16 @@
+[project]
+name = "rule-based-discovery"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "pandas>=3.0.1",
+    "pytest>=9.0.2",
+    "streamlit>=1.19.0",
+    "typing>=3.10.0.0",
+]
+[tool.setuptools]
+packages = ["cuts", "rules", "binary_im", "rule_extraction"]

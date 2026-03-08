@@ -4,9 +4,9 @@ import pandas as pd
 
 from cuts.base_cut import BaseCut
 
-class ExclusiveCut(BaseCut):
+class ExclusiveChoiceCut(BaseCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
-        super().__init__("ExclusiveCut", list(dfg.nodes), dfg)
+        super().__init__("ExclusiveChoiceCut", list(dfg.nodes), dfg)
         self.dfg = dfg
 
     def discover(self) -> List[set]:
@@ -14,41 +14,47 @@ class ExclusiveCut(BaseCut):
         # For all i != j and aj \in partition j, ai \in partition i, there is no edge ai -> aj in the DFG
         partitions = nx.weakly_connected_components(self.dfg)
         exclusive_partitions = [set(partition) for partition in partitions]
+        # sort them based on the number of nodes and lexicographically to ensure deterministic output
+        exclusive_partitions.sort(key=lambda x: (len(x), ' '.join(sorted(x))), reverse=True)
         return exclusive_partitions
-    def project(self, traces : pd.DataFrame, groups: List[set]) -> pd.DataFrame:
-        # Projecting the traces onto the given group of activities
-        sublogs = []
-        for group in groups:
-            sublog = traces.copy()
-            sublog['trace'] = sublog['trace'].apply(lambda trace: [act for act in trace if act in group])
-            sublogs.append(sublog)
-        return sublogs
     
-    def project_argmax(self, traces: List[str], groups: List[set]) -> dict:
+
+    def project_standard(self, log : pd.DataFrame, groups: List[set], case_key : str = 'case:concept:name', activity_key : str = 'concept:name') -> pd.DataFrame:
+        # Projecting the traces onto the given group of activities
+        sublogs = [[] for _ in groups]
+        group_mapping = {activity: idx for idx, group in enumerate(groups) for activity in group}
+        log['group'] = log[activity_key].apply(lambda act: group_mapping.get(act, None))
+        traces = log.groupby(case_key)
+        for _, trace in traces:
+            for group in trace['group'].unique():
+                if group is not None:
+                    sublogs[group].append(trace[trace['group'] == group])
+        # make sure that each sublog is a single dataframe
+        sublogs = [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
+        return sublogs
+        
+
+    
+    def project(self, log: pd.DataFrame, groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
         # Argmax definition of projection according to 
         # Using translucent activity relationships frequencies to enhance process discovery
         # Beyel, van der Aalst (doi: 10.1007/s44311-025-00010-y)
-        sublogs : dict = {}
-        for trace in traces:
-            max_group_projection = []
-            max_group_id = None
-            for idx, group in enumerate(groups):
-                projected_trace = [act for act in trace if act in group]
-                if len(projected_trace) > len(max_group_projection):
-                    max_group_projection = projected_trace
-                    max_group_id = idx
-            if max_group_id is not None:
-                if max_group_id not in sublogs:
-                    sublogs[max_group_id] = []
-                sublogs[max_group_id].append(max_group_projection)
-        return sublogs
+        sublogs = [[] for _ in groups]
+        group_mapping = {activity: idx for idx, group in enumerate(groups) for activity in group}
+        log['group'] = log[activity_key].apply(lambda act: group_mapping.get(act, None))
+        traces = log.groupby(case_key)
+        for _, trace in traces:
+            max_group = trace['group'].value_counts().idxmax()
+            if max_group is not None:
+                sublogs[max_group].append(trace)
+        return [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
 
             
             
-class BinaryExclusiveCut(ExclusiveCut):
+class BinaryExclusiveChoiceCut(ExclusiveChoiceCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
         super().__init__(dfg)
-        self.name = "BinaryExclusiveCut"
+        self.name = "BinaryExclusiveChoiceCut"
 
     def discover(self) -> List[set]:
         # Ensure that the discovered partitions are exactly two
@@ -62,8 +68,5 @@ class BinaryExclusiveCut(ExclusiveCut):
             partitions = [partitions[0], merged_partition]
         return partitions
     
-    def project(self, traces : pd.DataFrame, groups: List[set]) -> pd.DataFrame:
-        # Just call the super class on that
-        return super().project(traces, groups)
-    def project_argmax(self, traces: List[str], groups: List[set]) -> dict:
-        return super().project_argmax(traces, groups)
+    def project(self, log: pd.DataFrame, groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
+        return super().project(log, groups, case_key, activity_key)

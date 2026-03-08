@@ -1,30 +1,68 @@
+from copy import copy
 import networkx as nx
 from typing import List, Tuple, Dict
+import matplotlib.pyplot as plt
+import pandas as pd
 
 class DirectlyFollowsGraph:
-    def __init__(self, log : List):
-        self.log = log
-        self.dfg = self._build_dfg()
+    def __init__(self, log : pd.DataFrame, activity_key : str = 'concept:name', 
+                 case_key : str = 'case:concept:name'):
+        self.activity_key = activity_key
+        self.case_key = case_key
+        self.start_activities = set()
+        self.end_activities = set()
+
+        self.relations = self._extract_dfg_relations(log)
+        self.graph = self._build_dfg()
     
-    def _build_dfg(self) -> nx.DiGraph:
-        dfg = nx.DiGraph()
-        for trace in self.log:
+    def _extract_dfg_relations(self, log : List) -> Dict[Tuple[str, str], int]:
+        dfg_relations = dict()
+        traces = log.groupby(self.case_key)[self.activity_key].apply(list).tolist()
+        for trace in traces:
+            trace_start = trace[0] if trace else None
+            trace_end = trace[-1] if trace else None
+
+            if trace_start:
+                # Add implicit edge (,trace_start) to represent start of trace
+                dfg_relations[(None, trace_start)] = dfg_relations.get((None, trace_start), 0) + 1
+                self.start_activities.add(trace_start)
+            if trace_end:
+                # Add implicit edge (trace_end, implicit_end_node) to represent end of trace
+                dfg_relations[(trace_end, None)] = dfg_relations.get((trace_end, None), 0) + 1
+                self.end_activities.add(trace_end)
+
+            if not trace_start and not trace_end:
+                # This is an empty trace, so we add an edge from start to end
+                dfg_relations[(None, None)] = dfg_relations.get((None, None), 0) + 1
+
             for i in range(len(trace) - 1):
                 a1 = trace[i]
                 a2 = trace[i + 1]
-                if dfg.has_edge(a1, a2):
-                    dfg[a1][a2]['weight'] += 1
-                else:
-                    dfg.add_edge(a1, a2, weight=1)
+                dfg_relations[(a1, a2)] = dfg_relations.get((a1, a2), 0) + 1
+        return dfg_relations
+    def get_start_activities(self):
+        return self.start_activities
+    def get_end_activities(self):
+        return self.end_activities
+    def _build_dfg(self) -> nx.DiGraph:
+        dfg = nx.DiGraph()
+        
+        for (a1, a2), count in self.relations.items():
+            if a1 is None and a2 is None:
+                # This means we have an empty trace
+                continue
+            elif a1 is None:
+                # add a2 if it isn't in the graph
+                if a2 not in dfg.nodes:
+                    dfg.add_node(a2)
+                dfg.nodes[a2]['start'] = dfg.nodes[a2].get('start', 0) + count
+            elif a2 is None:
+                # add a1 if it isn't in the graph
+                if a1 not in dfg.nodes:
+                    dfg.add_node(a1)
+                dfg.nodes[a1]['end'] = dfg.nodes[a1].get('end', 0) + count
+            else:
+                dfg.add_edge(a1, a2, weight=count)
         return dfg
     
-    def __get_start_activities(self) -> List[str]:
-        return [node for node in self.dfg.nodes if self.dfg.in_degree(node) == 0]
     
-    def __get_end_activities(self) -> List[str]:
-        return [node for node in self.dfg.nodes if self.dfg.out_degree(node) == 0]
-    
-    def __repr__(self) -> str:
-        return "DirectlyFollowsGraph with {} nodes and {} edges".format(
-            self.dfg.number_of_nodes(), self.dfg.number_of_edges()
-        )
