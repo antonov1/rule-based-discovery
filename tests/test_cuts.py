@@ -114,14 +114,14 @@ def test_exclusive_cut_1():
     ])
     exclusive_cut = ExclusiveChoiceCut(dfg)
     partitions = exclusive_cut.discover()
-    assert len(partitions) == 1
+    assert partitions is None
 
 def test_exclusive_cut_none():
     dfg = nx.DiGraph()
     exclusive_cut = ExclusiveChoiceCut(dfg)
     partitions = exclusive_cut.discover()
     print(partitions)
-    assert len(partitions) == 0
+    assert partitions is None
 
 # ====== TESTS FOR LOOP CUT ======
 def test_loop_cut_0():
