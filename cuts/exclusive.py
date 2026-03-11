@@ -1,7 +1,7 @@
 import networkx as nx
 from typing import List
 import pandas as pd
-
+import copy
 from cuts.base_cut import BaseCut
 
 class ExclusiveChoiceCut(BaseCut):
@@ -16,7 +16,7 @@ class ExclusiveChoiceCut(BaseCut):
         exclusive_partitions = [set(partition) for partition in partitions]
         # sort them based on the number of nodes and lexicographically to ensure deterministic output
         exclusive_partitions.sort(key=lambda x: (len(x), ' '.join(sorted(x))), reverse=True)
-        return exclusive_partitions
+        return exclusive_partitions if len(exclusive_partitions) > 1 else None
     
 
     def project_standard(self, log : pd.DataFrame, groups: List[set], case_key : str = 'case:concept:name', activity_key : str = 'concept:name') -> pd.DataFrame:
@@ -42,11 +42,20 @@ class ExclusiveChoiceCut(BaseCut):
         sublogs = [[] for _ in groups]
         group_mapping = {activity: idx for idx, group in enumerate(groups) for activity in group}
         log['group'] = log[activity_key].apply(lambda act: group_mapping.get(act, None))
+        # Remove parts where we have NaN in activity_key column
+        log.dropna(subset=[activity_key], inplace=True)
         traces = log.groupby(case_key)
-        for _, trace in traces:
-            max_group = trace['group'].value_counts().idxmax()
-            if max_group is not None:
-                sublogs[max_group].append(trace)
+        
+        for case_id, trace in traces:
+            counts = trace['group'].dropna().value_counts()
+            if not counts.empty:
+                max_group = int(counts.idxmax())
+                print(f"Case {case_id} is assigned to group {max_group} with count {counts[max_group]}")
+                sublogs[max_group].append(trace.drop(columns=['group']))
+            else:
+                empty_trace = pd.DataFrame([{col: None for col in log.columns}])
+                empty_trace[case_key] = case_id
+                sublogs[0].append(empty_trace)
         return [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
 
             
@@ -60,12 +69,20 @@ class BinaryExclusiveChoiceCut(ExclusiveChoiceCut):
         # Ensure that the discovered partitions are exactly two
         partitions = super().discover()
         # Get the biggest partition and merge the rest into one
-        if len(partitions) > 2 :
+        if partitions is not None and len(partitions) > 2 :
             partitions = sorted(partitions, key=len, reverse=True)
             merged_partition = set()
             for partition in partitions[1:]:
                 merged_partition.update(partition)
             partitions = [partitions[0], merged_partition]
+            # If ArtificialNoneNode is in one of the partitions, we need to make sure that everything else
+            # Apart from ArtificialNoneNode is in the other partition
+            partitions_copy = copy.copy(partitions)
+            if 'ArtificialNoneNode' in partitions_copy[0] or 'ArtificialNoneNode' in partitions_copy[1]:
+                everything_else = set(self.dfg.nodes) - {'ArtificialNoneNode'}
+                partitions[1] = {'ArtificialNoneNode'}
+                partitions[0] = everything_else
+
         return partitions
     
     def project(self, log: pd.DataFrame, groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:

@@ -34,6 +34,8 @@ class DirectlyFollowsGraph:
             if not trace_start and not trace_end:
                 # This is an empty trace, so we add an edge from start to end
                 dfg_relations[(None, None)] = dfg_relations.get((None, None), 0) + 1
+                self.start_activities.add(None)
+                self.end_activities.add(None)
 
             for i in range(len(trace) - 1):
                 a1 = trace[i]
@@ -50,7 +52,10 @@ class DirectlyFollowsGraph:
         for (a1, a2), count in self.relations.items():
             if a1 is None and a2 is None:
                 # This means we have an empty trace
-                continue
+                # add an artificial start and end node to represent this
+                if 'ArtificialNoneNode' not in dfg.nodes:
+                    dfg.add_node('ArtificialNoneNode')
+                dfg.add_edge('ArtificialNoneNode', 'ArtificialNoneNode', weight=count)
             elif a1 is None:
                 # add a2 if it isn't in the graph
                 if a2 not in dfg.nodes:

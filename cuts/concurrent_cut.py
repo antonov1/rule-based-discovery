@@ -42,7 +42,7 @@ class ConcurrentCut(BaseCut):
                 # add to previous group
                 groups[i-1] = groups[i-1].union(current_group)
         groups = list(sorted(groups, key=lambda x: (len(x), ' '.join(sorted(x))), reverse=True))
-        return groups
+        return groups if len(groups) > 1 else None
     
     @staticmethod
     def project(event_log : pd.DataFrame, groups: List[set], activity_key : str = 'concept:name', case_key : str = 'case:concept:name') -> pd.DataFrame:
@@ -67,7 +67,7 @@ class BinaryConcurrentCut(ConcurrentCut):
         # Just call the super class on that
         groups =  super().discover()
         # Split them in a way s.t. the biggest group is one and the rest of the groups are merged into another
-        if len(groups) > 2 :
+        if groups is not None and len(groups) > 2 :
             # create a string out of each group based on the sorted activities in the group and sort them based on length
             merged_group = set()
             for group in groups[1:]:

@@ -56,7 +56,7 @@ class SequenceCut(BaseCut):
         sublogs = [[] for _ in groups]
         traces = log.groupby(case_key)
         for _, trace in traces:
-            i, split_point = 0, 0
+            split_point = 0
             act_union = set()
             trace_as_list = trace[activity_key].tolist()
             for idx, group in enumerate(groups):
@@ -68,10 +68,15 @@ class SequenceCut(BaseCut):
                         # append the j-th event from trace to the subtrace
                         subtrace.append(trace.index[j])
                     j += 1
-                sublogs[idx].append(trace.loc[subtrace])
+                if subtrace:
+                    projected = trace.loc[subtrace].copy()
+                else:
+                    projected = pd.DataFrame([{col: None for col in log.columns}])
+                    projected[case_key] = trace[case_key].iloc[0]
+                sublogs[idx].append(projected)
                 split_point = split
                 act_union = act_union.union(set(group))
-                i+=1
+
         return [
             pd.concat(sublog, ignore_index=True) if sublog
             else pd.DataFrame(columns=log.columns)
@@ -108,7 +113,7 @@ class BinarySequenceCut(SequenceCut):
             return [set().union(*groups[:mid]), set().union(*groups[mid:])]
         return groups
     
-    def project(self, traces : pd.DataFrame, groups: List[set]) -> pd.DataFrame:
+    def project(self, traces : pd.DataFrame, groups: List[set], activity_key: str = 'concept:name', case_key: str = 'case:concept:name') -> pd.DataFrame:
         # Just call the super class on that
-        return super().project(traces, groups)
+        return super().project(traces, groups, activity_key, case_key)
     

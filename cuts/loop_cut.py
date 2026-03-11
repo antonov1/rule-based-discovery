@@ -144,7 +144,7 @@ class BinaryLoopCut(LoopCut):
         # Just call the super class on that
         groups = super().discover()
         # Split them in a way s.t. the biggest group is one and the rest of the groups are merged into another
-        if len(groups) > 2 :
+        if groups and len(groups) > 2 :
             merged_group = set()
             for group in groups[1:]:
                 merged_group.update(group)
@@ -156,5 +156,13 @@ class BinaryLoopCut(LoopCut):
         # Just call the super class on that
         return super().project(log, groups, activity_key=activity_key, case_key=case_key)
 
-
+if __name__ == "__main__":
+    # try with <a>, <a,a,a>, <a,a,a,a,a>
+    dfg = nx.DiGraph()
+    dfg.add_edge('a', 'a', weight=4)
+    dfg.nodes['a']['start'] = 5
+    dfg.nodes['a']['end'] = 5
+    loop_cut = LoopCut(dfg)
+    groups = loop_cut.discover()
+    print(groups)
 
