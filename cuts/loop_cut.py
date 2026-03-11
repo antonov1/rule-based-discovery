@@ -59,9 +59,8 @@ class LoopCut(BaseCut):
                if e == act:
                 group_v = next((group for group in groups if v in group), None)
                 group_a = next((group for group in groups if act in group), None)
-                remaining_groups = [group for group in groups if group != group_v and group != group_a]
-                new_do_group = group_v.union(group_a)
-                groups = remaining_groups.insert(0, new_do_group)
+                groups = [group for group in groups if group != group_v and group != group_a]
+                groups.insert(0, group_v.union(group_a))
         return groups
     @staticmethod
     def __exclude_groups_not_reachable_from_end(dfg: nx.DiGraph, groups: List[set], end_activities: set) -> List[set]:
@@ -70,9 +69,8 @@ class LoopCut(BaseCut):
                if v == act:
                 group_e = next((group for group in groups if e in group), None)
                 group_a = next((group for group in groups if act in group), None)
-                remaining_groups = [group for group in groups if group != group_e and group != group_a]
-                new_do_group = group_e.union(group_a)
-                groups = remaining_groups.insert(0, new_do_group)
+                groups = [group for group in groups if group != group_e and group != group_a]
+                groups.insert(0, group_e.union(group_a))
         return groups
     
     @staticmethod

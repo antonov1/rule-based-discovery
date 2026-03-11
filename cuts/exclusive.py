@@ -21,16 +21,9 @@ class ExclusiveChoiceCut(BaseCut):
 
     def project_standard(self, log : pd.DataFrame, groups: List[set], case_key : str = 'case:concept:name', activity_key : str = 'concept:name') -> pd.DataFrame:
         # Projecting the traces onto the given group of activities
-        sublogs = [[] for _ in groups]
         group_mapping = {activity: idx for idx, group in enumerate(groups) for activity in group}
         log['group'] = log[activity_key].apply(lambda act: group_mapping.get(act, None))
-        traces = log.groupby(case_key)
-        for _, trace in traces:
-            for group in trace['group'].unique():
-                if group is not None:
-                    sublogs[group].append(trace[trace['group'] == group])
-        # make sure that each sublog is a single dataframe
-        sublogs = [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
+        sublogs = log.groupby('group')
         return sublogs
         
 
@@ -50,7 +43,6 @@ class ExclusiveChoiceCut(BaseCut):
             counts = trace['group'].dropna().value_counts()
             if not counts.empty:
                 max_group = int(counts.idxmax())
-                print(f"Case {case_id} is assigned to group {max_group} with count {counts[max_group]}")
                 sublogs[max_group].append(trace.drop(columns=['group']))
             else:
                 empty_trace = pd.DataFrame([{col: None for col in log.columns}])

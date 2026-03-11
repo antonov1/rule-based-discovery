@@ -32,7 +32,7 @@ class SequenceCut(BaseCut):
         # For all 1 <= i < j <= n ai \in Sigma_i and aj \in Sigma j: aj ---> ai \not \in the DFG where ----> means eventually follows
          # For all 1 <= i < j <= n ai \in Sigma_i and aj \in Sigma j: ai ---> aj in the DFG where ----> means eventually follows
         activities = set(self.dfg.nodes)
-        groups = [set(activity) for activity in activities]
+        groups = [{activity} for activity in activities]
         if not groups:
             return None
         # Merging groups based on eventually follows relations
@@ -44,7 +44,6 @@ class SequenceCut(BaseCut):
                 elif act2 not in transitive_successors[act1] and act1 not in transitive_successors[act2]:
                     # Unreachable groups should be merged together
                     groups = merge_groups(groups, act1, act2)
-        print(f"Groups after merging: {groups}")
         # Sorting groups based on reachability
         groups = list(sorted(groups, key=lambda g: len(
             transitive_predecessors[next(iter(g))]) + (len(activities) - len(transitive_successors[next(iter(g))]))))
