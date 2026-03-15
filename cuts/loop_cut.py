@@ -14,6 +14,9 @@ class LoopCut(BaseCut):
 
     def discover(self) -> List[set]:
         # Empty DFG means no activities
+        if 'ArtificialNoneNode' in self.dfg.nodes:
+            # We have only empty traces, so we return None to indicate that we cannot apply this cut
+            return None
         if self.dfg is None or len(self.dfg.nodes) == 0:
             return None
         
@@ -110,27 +113,25 @@ class LoopCut(BaseCut):
                 
 
     @staticmethod
-    def project(log : pd.DataFrame, groups: List[set], activity_key : str = 'concept:name',
+    def project(log : List[List[str]], groups: List[set], activity_key : str = 'concept:name',
                 case_key : str = 'case:concept:name') -> pd.DataFrame:
         sublogs = [[] for _ in groups]
         activity_to_group = {activity: idx for idx, group in enumerate(groups) for activity in group}
-        log['group'] = log[activity_key].apply(lambda act: activity_to_group.get(act, None))
-        if log['group'].isnull().any():
-            raise ValueError("Some activities in the log do not belong to any group, cannot project.")
         # Now divide the log into sublogs based on the group column
-        traces = log.groupby(case_key)
-        for _, trace in traces:
+        if 'ArtificialNoneNode' in activity_to_group:
+            return None
+        for trace in log:
             prev_group = None
             curr_trace = []
-            for idx, event in trace.iterrows():
-                if event['group'] is not None and event['group'] != prev_group:
-                    if curr_trace and prev_group is not None:
-                        sublogs[prev_group].append(trace.loc[curr_trace])
-                    curr_trace = [idx]
-                    prev_group = event['group']
-                else:
-                    curr_trace.append(idx)
-        sublogs = [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
+            for act in trace:
+                if act in activity_to_group:
+                    group_idx = activity_to_group[act]
+                    if group_idx != prev_group:
+                        if curr_trace and prev_group is not None:
+                            sublogs[prev_group].append(curr_trace)
+                            curr_trace = []
+                    curr_trace.append(act)
+                    prev_group = group_idx
         return sublogs
     
 class BinaryLoopCut(LoopCut):
@@ -149,7 +150,7 @@ class BinaryLoopCut(LoopCut):
             groups = [groups[0], merged_group]
         return groups
     
-    def project(self, log : pd.DataFrame, groups: List[set], activity_key : str = 'concept:name',
+    def project(self, log : List[List[str]], groups: List[set], activity_key : str = 'concept:name',
                 case_key : str = 'case:concept:name') -> pd.DataFrame:
         # Just call the super class on that
         return super().project(log, groups, activity_key=activity_key, case_key=case_key)

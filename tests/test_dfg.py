@@ -1,6 +1,6 @@
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-"""
+
 def test_dfg_construction():
     log = [['A', 'B', 'C'], ['A', 'C'], ['B', 'C'], []]
     dfg = DirectlyFollowsGraph(log)
@@ -13,4 +13,3 @@ def test_dfg_construction():
         ('C', None): 3,
         (None, None): 1
     }
-"""

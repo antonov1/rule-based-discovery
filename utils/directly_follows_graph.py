@@ -1,14 +1,8 @@
-from copy import copy
 import networkx as nx
 from typing import List, Tuple, Dict
-import matplotlib.pyplot as plt
-import pandas as pd
 
 class DirectlyFollowsGraph:
-    def __init__(self, log : pd.DataFrame, activity_key : str = 'concept:name', 
-                 case_key : str = 'case:concept:name'):
-        self.activity_key = activity_key
-        self.case_key = case_key
+    def __init__(self, log : List[List[str]]):
         self.start_activities = set()
         self.end_activities = set()
 
@@ -17,8 +11,7 @@ class DirectlyFollowsGraph:
     
     def _extract_dfg_relations(self, log : List) -> Dict[Tuple[str, str], int]:
         dfg_relations = dict()
-        traces = log.groupby(self.case_key)[self.activity_key].apply(list).tolist()
-        for trace in traces:
+        for trace in log:
             trace_start = trace[0] if trace else None
             trace_end = trace[-1] if trace else None
 
@@ -69,5 +62,4 @@ class DirectlyFollowsGraph:
             else:
                 dfg.add_edge(a1, a2, weight=count)
         return dfg
-    
     

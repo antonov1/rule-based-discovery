@@ -49,38 +49,28 @@ class SequenceCut(BaseCut):
             transitive_predecessors[next(iter(g))]) + (len(activities) - len(transitive_successors[next(iter(g))]))))
         return groups if len(groups) > 1 else None
     
-    def project(self, log : pd.DataFrame, groups: List[set], activity_key = 'concept:name', case_key = 'case:concept:name') -> pd.DataFrame:
+    def project(self, log : List[List[str]], groups: List[set], activity_key = 'concept:name', case_key = 'case:concept:name') -> pd.DataFrame:
         # Projecting the traces onto the given group of activities
         # Groups are ordered based on transitivity so we can always start iterating from beginning
         sublogs = [[] for _ in groups]
-        traces = log.groupby(case_key)
-        for _, trace in traces:
+        for trace in log:
             split_point = 0
             act_union = set()
-            trace_as_list = trace[activity_key].tolist()
+            trace_as_list = trace.copy()
             for idx, group in enumerate(groups):
                 split = self.find_split_point(trace_as_list, split_point, group)
                 j = split_point
                 subtrace = []
-                while j <= split and j < len(trace_as_list):
+                while j <= split:
                     if trace_as_list[j] in group:
                         # append the j-th event from trace to the subtrace
-                        subtrace.append(trace.index[j])
+                        subtrace.append(trace[j])
                     j += 1
-                if subtrace:
-                    projected = trace.loc[subtrace].copy()
-                else:
-                    projected = pd.DataFrame([{col: None for col in log.columns}])
-                    projected[case_key] = trace[case_key].iloc[0]
-                sublogs[idx].append(projected)
+                sublogs[idx].append(subtrace)
                 split_point = split
                 act_union = act_union.union(set(group))
 
-        return [
-            pd.concat(sublog, ignore_index=True) if sublog
-            else pd.DataFrame(columns=log.columns)
-            for sublog in sublogs
-        ]    
+        return sublogs
     @staticmethod
     def find_split_point(trace, start_idx : int, group : set) -> int:
         "Tries to identify minimal split point wrt cost"
@@ -112,7 +102,6 @@ class BinarySequenceCut(SequenceCut):
             return [set().union(*groups[:mid]), set().union(*groups[mid:])]
         return groups
     
-    def project(self, traces : pd.DataFrame, groups: List[set], activity_key: str = 'concept:name', case_key: str = 'case:concept:name') -> pd.DataFrame:
+    def project(self, log : List[List[str]], groups: List[set], activity_key: str = 'concept:name', case_key: str = 'case:concept:name') -> pd.DataFrame:
         # Just call the super class on that
-        return super().project(traces, groups, activity_key, case_key)
-    
+        return super().project(log, groups, activity_key, case_key)

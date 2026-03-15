@@ -12,6 +12,9 @@ class ExclusiveChoiceCut(BaseCut):
     def discover(self) -> List[set]:
         # To discover partitions of the graph where no direct follows relations exist between partitions
         # For all i != j and aj \in partition j, ai \in partition i, there is no edge ai -> aj in the DFG
+        # Enforce that we deal with empty traces as soon as possible:
+        if 'ArtificialNoneNode' in self.dfg.nodes:
+            return None
         partitions = nx.weakly_connected_components(self.dfg)
         exclusive_partitions = [set(partition) for partition in partitions]
         # sort them based on the number of nodes and lexicographically to ensure deterministic output
@@ -28,27 +31,26 @@ class ExclusiveChoiceCut(BaseCut):
         
 
     
-    def project(self, log: pd.DataFrame, groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
+    def project(self, log: List[List[str]], groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
         # Argmax definition of projection according to 
         # Using translucent activity relationships frequencies to enhance process discovery
         # Beyel, van der Aalst (doi: 10.1007/s44311-025-00010-y)
         sublogs = [[] for _ in groups]
         group_mapping = {activity: idx for idx, group in enumerate(groups) for activity in group}
-        log['group'] = log[activity_key].apply(lambda act: group_mapping.get(act, None))
-        # Remove parts where we have NaN in activity_key column
-        log.dropna(subset=[activity_key], inplace=True)
-        traces = log.groupby(case_key)
-        
-        for case_id, trace in traces:
-            counts = trace['group'].dropna().value_counts()
-            if not counts.empty:
-                max_group = int(counts.idxmax())
-                sublogs[max_group].append(trace.drop(columns=['group']))
+        for trace in log:
+            count_group = {idx: 0 for idx in range(len(groups))}
+            for act in trace:
+                if act in group_mapping:
+                    count_group[group_mapping[act]] += 1
+            max_count = max(count_group.values(), default=0)
+            if max_count > 0:
+                max_group = max(count_group, key=count_group.get)
+                projected_trace = [act for act in trace if act in groups[max_group]]
+                sublogs[max_group].append(projected_trace)
             else:
-                empty_trace = pd.DataFrame([{col: None for col in log.columns}])
-                empty_trace[case_key] = case_id
-                sublogs[0].append(empty_trace)
-        return [pd.concat(sublog) if sublog else pd.DataFrame(columns=log.columns) for sublog in sublogs]
+                sublogs[0].append([])
+        return sublogs
+            
 
             
             
@@ -77,5 +79,5 @@ class BinaryExclusiveChoiceCut(ExclusiveChoiceCut):
 
         return partitions
     
-    def project(self, log: pd.DataFrame, groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
+    def project(self, log: List[List[str]], groups: List[set], case_key: str = 'case:concept:name', activity_key: str = 'concept:name') -> dict:
         return super().project(log, groups, case_key, activity_key)

@@ -1,6 +1,7 @@
 import networkx as nx   
 from typing import List
 
+from networkx.utils import groups
 import pandas as pd
 from cuts.base_cut import BaseCut
 from itertools import product
@@ -16,9 +17,13 @@ class ConcurrentCut(BaseCut):
         # 0. Create a set/group for each activity
         # 1. Merge not-fully connected sets
         # 2. Merge sets without start/end activities
-        groups = [set(activity) for activity in self.dfg.nodes]
+        if 'ArtificialNoneNode' in self.dfg.nodes:
+            # To make sure that empty traces are 
+            # always handled first
+            return None
+        groups = [{a} for a in self.dfg.nodes]
         for act1, act2 in product(self.dfg.nodes, self.dfg.nodes):
-            if (act1, act2) not in self.dfg.edges and (act2, act1) not in self.dfg.edges:
+            if (act1, act2) not in self.dfg.edges or (act2, act1) not in self.dfg.edges:
                 groups = merge_groups(groups, act1, act2)
         # Merging sets without start/end activities
         # nodes with attribute start > 0
@@ -45,18 +50,16 @@ class ConcurrentCut(BaseCut):
         return groups if len(groups) > 1 else None
     
     @staticmethod
-    def project(event_log : pd.DataFrame, groups: List[set], activity_key : str = 'concept:name', case_key : str = 'case:concept:name') -> pd.DataFrame:
+    def project(event_log : List[List[str]], groups: List[set], activity_key : str = 'concept:name', case_key : str = 'case:concept:name') -> pd.DataFrame:
         # find in which group trace the attribute 'activity_key' is
-
-        event_log['group'] = event_log[activity_key].apply(lambda act: next((idx for idx, group in enumerate(groups) if act in group), None))
-        # Split the event log based on the group column
-        sublogs = []
-        for group_id in event_log['group'].unique():
-            sublog = event_log[event_log['group'] == group_id].copy()
-            sublog.drop(columns=['group'], inplace=True)
-            sublogs.append(sublog)
+        sublogs = [[] for _ in range(len(groups))]
+        for trace in event_log:
+            for idx, group in enumerate(groups):
+                projected_trace = [act for act in trace if act in group]
+                if projected_trace:
+                    sublogs[idx].append(projected_trace)
         return sublogs
-    
+
     
 class BinaryConcurrentCut(ConcurrentCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
@@ -75,10 +78,7 @@ class BinaryConcurrentCut(ConcurrentCut):
             groups = [groups[0], merged_group]
         return groups
     
-    def project(self, log : pd.DataFrame, groups: List[set], activity_key : str = 'concept:name', case_key : str = 'case:concept:name') -> pd.DataFrame:
+    def project(self, log : List[List[str]], groups: List[set], activity_key : str = 'concept:name', case_key : str = 'case:concept:name') -> pd.DataFrame:
         # Just call the super class on that
         return super().project(log, groups, activity_key=activity_key, case_key=case_key)
 
-        
-
-   
