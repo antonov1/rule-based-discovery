@@ -26,8 +26,8 @@ def traces_to_df(traces):
     result_tree_2 = apply_binary_IM(log_2)
     result_tree_2_im = inductive_miner.apply(log_2)
     print(pm4py.behavioral_similarity(result_tree_2, result_tree_2_im))
-    # a flower model log 
-    # find all possible permutations of 
+    # a flower model log
+    # find all possible permutations of
     # THIS ONE IS WRONG, check once again the cut and the projection
 
     log_diff = traces_to_df([
