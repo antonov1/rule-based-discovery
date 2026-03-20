@@ -11,33 +11,34 @@ def detect(log: list[list[str]], cut_order: list[type]) -> Optional[str]:
         return None
 
     candidates = sorted({e for trace in log for e in trace})
-    for candidate in sorted(candidates):
+
+    for candidate in candidates:
+        # projection
         proj = [[e for e in trace if e != candidate] for trace in log]
-        proj = [trace for trace in proj if len(trace)]
+        # proj = [trace for trace in proj if len(trace)]
 
         dfg_proj = DirectlyFollowsGraph(proj).graph
+        if len(dfg_proj.nodes) == 0:
+            continue
+
         for cut_cls in cut_order:
             cut_instance = cut_cls(dfg_proj)
             groups = cut_instance.discover()
             if groups is not None:
+                # We found an activity that is concurrent to a structured process.
                 return candidate
 
     return None
 
 
 def project(log: list[list[str]], candidate: str) -> list[list[list[str]]]:
-    proj = []
-    proj_act = []
-
-    for trace in log:
-        proj.append([e for e in trace if e != candidate])
-        proj_act.append(([e for e in trace if e == candidate]))
-
-    return [proj, proj_act]
+    log_a = [[e for e in trace if e == candidate] for trace in log]
+    log_other = [[e for e in trace if e != candidate] for trace in log]
+    return [log_a, log_other]
 
 
 def apply(
-    im_function: Callable[[list[list[str]], ProcessTree], ProcessTree],
+    im_function: Callable,
     log: list[list[str]],
     dfg: nx.DiGraph,
     cut_order: list[type],
@@ -47,18 +48,13 @@ def apply(
     if candidate is None:
         return None
 
-    acts = list(dfg.nodes)
-    if "ArtificialNoneNode" in acts:
-        raise ValueError("Empty Trace detected in Activity-Concurrent!")
-
+    # Binary split
     sublogs = project(log, candidate)
 
     parent = ProcessTree(operator=Operator.PARALLEL)
 
-    candidate_child = im_function(sublogs[1], ProcessTree())
-    add_child(parent=parent, child=candidate_child)
+    add_child(parent, im_function(sublogs[0], ProcessTree()))
 
-    other_child = im_function(sublogs[0], ProcessTree())
-    add_child(parent=parent, child=other_child)
+    add_child(parent, im_function(sublogs[1], ProcessTree()))
 
     return parent

@@ -72,25 +72,25 @@ def test_concurrent_cut_3_groups():
     groups = cut.discover()
     assert len(groups) == 2
     print(groups)
-    assert set(groups[0]) == {"c"}
-    assert set(groups[1]) == {"b", "a"}
+    assert set(groups[0]) == {"a"}
+    assert set(groups[1]) == {"b", "c"}
     assert set(groups[0]).isdisjoint(set(groups[1]))
     projected_logs = cut.project(log, groups)
     assert len(projected_logs) == 2
     for sublog in projected_logs:
         acts = {act for trace in sublog for act in trace}
-        assert set(acts) == {"c"} or set(acts) == {"b", "a"}
+        assert set(acts) == {"a"} or set(acts) == {"b", "c"}
     # Normal concurrent cut
     cut = ConcurrentCut(dfg)
     groups = cut.discover()
     assert len(groups) == 3
     for group in groups:
-        assert set(group) == {"c"} or set(group) == {"b"} or set(group) == {"a"}
+        assert set(group) == {"a"} or set(group) == {"b"} or set(group) == {"c"}
     projected_logs = cut.project(log, groups)
     assert len(projected_logs) == 3
     for sublog in projected_logs:
         acts = {act for trace in sublog for act in trace}
-        assert set(acts) == {"c"} or set(acts) == {"b"} or set(acts) == {"a"}
+        assert set(acts) == {"a"} or set(acts) == {"b"} or set(acts) == {"c"}
 
 
 # ====== TESTS FOR EXCLUSIVE CHOICE CUT ======
@@ -111,18 +111,18 @@ def test_exclusive_cut_0():
     exclusive_cut = ExclusiveChoiceCut(dfg)
     partitions = exclusive_cut.discover()
     assert len(partitions) == 3
-    assert set(partitions[0]) == {"c"}
+    assert set(partitions[0]) == {"a"}
     assert set(partitions[1]) == {"b"}
-    assert set(partitions[2]) == {"a"}
+    assert set(partitions[2]) == {"c"}
     # Test projection
     projected_logs = exclusive_cut.project(test_log, partitions)
     assert len(projected_logs) == 3
     acts_0 = {act for trace in projected_logs[0] for act in trace}
-    assert set(acts_0) == {"c"}
+    assert set(acts_0) == {"a"}
     acts_1 = {act for trace in projected_logs[1] for act in trace}
     assert set(acts_1) == {"b"}
     acts_2 = {act for trace in projected_logs[2] for act in trace}
-    assert set(acts_2) == {"a"}
+    assert set(acts_2) == {"c"}
 
 
 def test_exclusive_cut_0_binary():
@@ -140,15 +140,15 @@ def test_exclusive_cut_0_binary():
     exclusive_cut = BinaryExclusiveChoiceCut(dfg)
     partitions = exclusive_cut.discover()
     assert len(partitions) == 2
-    assert set(partitions[0]) == {"c"}
-    assert set(partitions[1]) == {"b", "a"}
+    assert set(partitions[0]) == {"a"}
+    assert set(partitions[1]) == {"b", "c"}
     # Test projection
     projected_logs = exclusive_cut.project(test_log, partitions)
     assert len(projected_logs) == 2
     acts_0 = {act for trace in projected_logs[0] for act in trace}
-    assert set(acts_0) == {"c"}
+    assert set(acts_0) == {"a"}
     acts_1 = {act for trace in projected_logs[1] for act in trace}
-    assert set(acts_1) == {"b", "a"}
+    assert set(acts_1) == {"b", "c"}
     print(projected_logs)
     total_length = sum(len(trace) for sublog in projected_logs[1] for trace in sublog)
     assert total_length == 4
@@ -185,17 +185,15 @@ def test_loop_cut_0():
     dfg = DirectlyFollowsGraph(log).graph
     loop_cut = LoopCut(dfg)
     groups = loop_cut.discover()
-    assert len(groups) == 3
+    assert len(groups) == 2
     assert set(groups[0]) == {"a"}
-    assert set(groups[1]) == {"b"} or set(groups[1]) == {"c"}
-    assert set(groups[2]) == {"b"} or set(groups[2]) == {"c"}
-    assert set(groups[2]) != set(groups[1])
+    assert set(groups[1]) == {"b", "c"}
     projected_logs = loop_cut.project(log, groups)
     print(projected_logs)
-    assert len(projected_logs) == 3
+    assert len(projected_logs) == 2
     for sublog in projected_logs:
         acts = {act for trace in sublog for act in trace}
-        assert set(acts) == {"a"} or set(acts) == {"b"} or set(acts) == {"c"}
+        assert set(acts) == {"a"} or set(acts) == {"b", "c"}
 
 
 def test_loop_cut_0_binary():
@@ -289,13 +287,13 @@ def test_sequence_cut_1_binary():
     sequence_cut = BinarySequenceCut(dfg)
     groups = sequence_cut.discover()
     assert len(groups) == 2
-    assert set(groups[0]) == {"a", "b"}
-    assert set(groups[1]) == {"c", "d"}
+    assert set(groups[0]) == {"a"}
+    assert set(groups[1]) == {"b", "c", "d"}
     projected_logs = sequence_cut.project(log, groups)
     assert len(projected_logs) == 2
     for sublog in projected_logs:
         acts = {act for trace in sublog for act in trace}
-        assert set(acts) == {"a", "b"} or set(acts) == {"c", "d"}
+        assert set(acts) == {"a"} or set(acts) == {"b", "c", "d"}
 
 
 def test_sequence_cut_with_empty_traces():

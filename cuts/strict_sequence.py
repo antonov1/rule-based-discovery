@@ -2,6 +2,7 @@ import sys
 from typing import List, Set
 
 import networkx as nx
+from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 from cuts.sequence import SequenceCut
 
 
@@ -51,6 +52,12 @@ class StrictSequenceCut(SequenceCut):
 
         start = {n for n in self.dfg.nodes if self.dfg.nodes[n].get("start", 0) > 0}
         end = {n for n in self.dfg.nodes if self.dfg.nodes[n].get("end", 0) > 0}
+        if not ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            if "ArtificialNoneNode" in self.dfg.nodes:
+                self.dfg.remove_node("ArtificialNoneNode")
+
+        if "ArtificialNoneNode" in self.dfg and ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            return None
 
         mf = [
             (-sys.maxsize if len(G.intersection(start)) > 0 else sys.maxsize) for G in c

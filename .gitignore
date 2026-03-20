@@ -244,3 +244,11 @@ dmypy.json
 # Ignore __pycache__ directories and .pyc files
 __pycache__/
 *.py[cod]
+
+# Event logs
+*.xes
+*.csv
+*.xes.gz
+
+# MacOS
+.DS_STORE

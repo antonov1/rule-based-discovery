@@ -1,9 +1,9 @@
-import copy
 from typing import List
 
 import networkx as nx
 import pandas as pd
 from cuts.base_cut import BaseCut
+from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 
 
 class ExclusiveChoiceCut(BaseCut):
@@ -15,13 +15,16 @@ class ExclusiveChoiceCut(BaseCut):
         # To discover partitions of the graph where no direct follows relations exist between partitions
         # For all i != j and aj \in partition j, ai \in partition i, there is no edge ai -> aj in the DFG
         # Enforce that we deal with empty traces as soon as possible:
-        if "ArtificialNoneNode" in self.dfg.nodes:
+        if not ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            if "ArtificialNoneNode" in self.dfg.nodes:
+                self.dfg.remove_node("ArtificialNoneNode")
+        if "ArtificialNoneNode" in self.dfg.nodes and ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
             return None
         partitions = nx.weakly_connected_components(self.dfg)
         exclusive_partitions = [set(partition) for partition in partitions]
         # sort them based on the number of nodes and lexicographically to ensure deterministic output
         exclusive_partitions.sort(
-            key=lambda x: (len(x), " ".join(sorted(x))), reverse=True
+            key=lambda x: (-len(x), " ".join(sorted(x))), reverse=False
         )
         return exclusive_partitions if len(exclusive_partitions) > 1 else None
 
@@ -71,14 +74,6 @@ class BinaryExclusiveChoiceCut(ExclusiveChoiceCut):
             partitions = [partitions[0], merged_partition]
             # If ArtificialNoneNode is in one of the partitions, we need to make sure that everything else
             # Apart from ArtificialNoneNode is in the other partition
-            partitions_copy = copy.copy(partitions)
-            if (
-                "ArtificialNoneNode" in partitions_copy[0]
-                or "ArtificialNoneNode" in partitions_copy[1]
-            ):
-                everything_else = set(self.dfg.nodes) - {"ArtificialNoneNode"}
-                partitions[1] = {"ArtificialNoneNode"}
-                partitions[0] = everything_else
 
         return partitions
 

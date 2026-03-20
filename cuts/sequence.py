@@ -5,7 +5,7 @@ import networkx as nx
 
 import pandas as pd
 from cuts.base_cut import BaseCut
-from cuts.cut_utils import merge_groups
+from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK, merge_groups
 
 
 class SequenceCut(BaseCut):
@@ -36,7 +36,11 @@ class SequenceCut(BaseCut):
 
         # For all 1 <= i < j <= n ai \in Sigma_i and aj \in Sigma j: aj ---> ai \not \in the DFG where ----> means eventually follows
         # For all 1 <= i < j <= n ai \in Sigma_i and aj \in Sigma j: ai ---> aj in the DFG where ----> means eventually follows
-        if "ArtificialNoneNode" in self.dfg.nodes:
+        if not ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            if "ArtificialNoneNode" in self.dfg.nodes:
+                self.dfg.remove_node("ArtificialNoneNode")
+
+        if "ArtificialNoneNode" in self.dfg.nodes and ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
             # We have only empty traces, so we return None to indicate that we cannot apply this cut
             return None
         activities = set(self.dfg.nodes)
@@ -124,11 +128,8 @@ class BinarySequenceCut(SequenceCut):
 
     def discover(self) -> List[List[str]]:
         groups = super().discover()
-        if groups and len(groups) > 2:
-            # Split them in the middle
-            mid = len(groups) // 2
-            return [set().union(*groups[:mid]), set().union(*groups[mid:])]
-        return groups
+        merged_rest = set().union(*groups[1:])
+        return [groups[0], merged_rest]
 
     def project(
         self,

@@ -1,11 +1,10 @@
-from itertools import product
 from typing import List
 
 import networkx as nx
 
 import pandas as pd
 from cuts.base_cut import BaseCut
-from cuts.cut_utils import merge_groups
+from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 
 
 class ConcurrentCut(BaseCut):
@@ -18,44 +17,74 @@ class ConcurrentCut(BaseCut):
         # 0. Create a set/group for each activity
         # 1. Merge not-fully connected sets
         # 2. Merge sets without start/end activities
-        if "ArtificialNoneNode" in self.dfg.nodes:
-            # To make sure that empty traces are
-            # always handled first
+
+        if not ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            if "ArtificialNoneNode" in self.dfg.nodes:
+                self.dfg.remove_node("ArtificialNoneNode")
+
+        if "ArtificialNoneNode" in self.dfg.nodes and ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
             return None
-        groups = [{a} for a in self.dfg.nodes]
-        for act1, act2 in product(self.dfg.nodes, self.dfg.nodes):
-            if (act1, act2) not in self.dfg.edges or (act2, act1) not in self.dfg.edges:
-                groups = merge_groups(groups, act1, act2)
-        # Merging sets without start/end activities
-        # nodes with attribute start > 0
+
+        alphabet = sorted(list(self.dfg.nodes))
+        edges = sorted(list(self.dfg.edges))
+
+        groups = [{a} for a in alphabet]
+        if len(groups) == 0:
+            return None
+
+        cont = True
+        while cont:
+            cont = False
+            i = 0
+            while i < len(groups):
+                j = i + 1
+                while j < len(groups):
+                    should_merge = False
+                    for act1 in groups[i]:
+                        for act2 in groups[j]:
+                            if (act1, act2) not in edges or (act2, act1) not in edges:
+                                should_merge = True
+                                break
+                        if should_merge:
+                            break
+
+                    if should_merge:
+                        groups[i] = groups[i].union(groups[j])
+                        del groups[j]
+                        cont = True
+                        break
+                    else:
+                        j += 1
+
+                if cont:
+                    break
+                i += 1
+
         start_activities = set(
             n for n in self.dfg.nodes if self.dfg.nodes[n].get("start", 0) > 0
         )
         end_activities = set(
             n for n in self.dfg.nodes if self.dfg.nodes[n].get("end", 0) > 0
         )
+
         groups = list(sorted(groups, key=lambda g: len(g)))
+
         i = 0
         while i < len(groups) and len(groups) > 1:
-            # if len(groups) == 1: we merged everything together
-            group = groups[i]
-            if group.intersection(start_activities) and group.intersection(
+            if groups[i].intersection(start_activities) and groups[i].intersection(
                 end_activities
             ):
-                # This group has both start and end activities, so we can skip it
                 i += 1
                 continue
-            # This group does not have both start and end activities, so we need to merge it
-            current_group = groups.pop(i)
+
+            group = groups[i]
+            del groups[i]
+
             if i == 0:
-                # We are at the beginning, so we can only merge with the next group
-                groups[0] = groups[0].union(current_group)
+                groups[i].update(group)
             else:
-                # add to previous group
-                groups[i - 1] = groups[i - 1].union(current_group)
-        groups = list(
-            sorted(groups, key=lambda x: (len(x), " ".join(sorted(x))), reverse=True)
-        )
+                groups[i - 1].update(group)
+
         return groups if len(groups) > 1 else None
 
     @staticmethod

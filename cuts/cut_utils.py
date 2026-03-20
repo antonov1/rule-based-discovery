@@ -1,5 +1,7 @@
 from typing import List
 
+ENABLE_EXPLICIT_EMPTY_TRACE_CHECK = True
+
 
 def merge_groups(groups: List[set], a: str, b: str) -> List[set]:
     # Used to detect pairwise unreachable nodes

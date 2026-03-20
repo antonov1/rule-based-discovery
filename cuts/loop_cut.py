@@ -4,6 +4,7 @@ import networkx as nx
 import pandas as pd
 
 from cuts.base_cut import BaseCut
+from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 
 
 class LoopCut(BaseCut):
@@ -12,15 +13,16 @@ class LoopCut(BaseCut):
         self.dfg = dfg
 
     def discover(self) -> List[set]:
-        # Empty DFG means no activities
-        if "ArtificialNoneNode" in self.dfg.nodes:
-            # We have only empty traces, so we return None to indicate that we cannot apply this cut
+        # To enforce fall-throughs
+        if not ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
+            if "ArtificialNoneNode" in self.dfg.nodes:
+                self.dfg.remove_node("ArtificialNoneNode")
+
+        if "ArtificialNoneNode" in self.dfg.nodes and ENABLE_EXPLICIT_EMPTY_TRACE_CHECK:
             return None
         if self.dfg is None or len(self.dfg.nodes) == 0:
             return None
 
-        # Partition_1 includes the start and end activities
-        # i.e., nodes with in-degree 0 or out-degree 0
         start_activities = set(
             n for n in self.dfg.nodes if self.dfg.nodes[n].get("start", 0) > 0
         )
@@ -32,9 +34,10 @@ class LoopCut(BaseCut):
             raise ValueError(
                 "No start or end activities found in the DFG, cannot apply LoopCut."
             )
+
         activities = set(self.dfg.nodes)
-        # The do group is always first
         groups = [do] + self.__reduce_dfg(do, activities)
+
         real_start_activities = start_activities.difference(end_activities)
         groups = self.__exclude_groups_not_reachable_from_start(
             self.dfg, groups, real_start_activities
@@ -47,11 +50,12 @@ class LoopCut(BaseCut):
             self.dfg, groups, start_activities
         )
         groups = self.merge_groups_with_end_activities(self.dfg, groups, end_activities)
-        # sort everything from group[1:] based on the number of nodes and lexicographically to ensure deterministic output
-        groups[1:] = sorted(
-            groups[1:], key=lambda x: (len(x), " ".join(sorted(x))), reverse=True
-        )
-        return groups if len(groups) > 1 else None
+
+        groups = [g for g in groups if g]
+        if len(groups) <= 1:
+            return None
+
+        return [groups[0], set().union(*groups[1:])]
 
     def __reduce_dfg(self, do_partition: set, activities: set) -> List[set]:
         new_dfg = self.dfg.copy()
@@ -179,13 +183,11 @@ class LoopCut(BaseCut):
                             redo_trace, redo_logs, redo
                         )
                         redo_trace = []
-                else:
-                    if act in redo_activities:
-                        redo_trace.append(act)
-                        if len(do_trace) > 0:
-                            do_log.append(do_trace)
-                            do_trace = []
-
+                elif act in redo_activities:
+                    redo_trace.append(act)
+                    if len(do_trace) > 0:
+                        do_log.append(do_trace)
+                        do_trace = []
             if len(redo_trace) > 0:
                 redo_logs = LoopCut._append_trace_to_redo_log(
                     redo_trace, redo_logs, redo
@@ -264,12 +266,6 @@ class BinaryLoopCut(LoopCut):
     def discover(self) -> List[set]:
         # Just call the super class on that
         groups = super().discover()
-        # Split them in a way s.t. the biggest group is one and the rest of the groups are merged into another
-        if groups and len(groups) > 2:
-            merged_group = set()
-            for group in groups[1:]:
-                merged_group.update(group)
-            groups = [groups[0], merged_group]
         return groups
 
     def project(

@@ -18,6 +18,24 @@ from fallthroughs import (
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
+ENABLE_PRINTS = False
+
+
+def handle_empty_traces(log):
+    if any(len(trace) == 0 for trace in log):
+        # Remove empty traces from the log
+        non_empty_log = [t for t in log if len(t) > 0]
+        if not non_empty_log:
+            return ProcessTree()  # Pure Tau
+
+        # Recursively mine the non-empty part and wrap in XOR
+        subtree = apply_IM(non_empty_log, ProcessTree())
+        root = ProcessTree(operator=Operator.XOR)
+        add_child(root, ProcessTree())  # Add Tau
+        add_child(root, subtree)  # Add the actual process
+        return root
+    return None
+
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
     return log.groupby(case_key)[activity_key].apply(list).tolist()
@@ -28,32 +46,41 @@ def apply_IM(
     process_tree: ProcessTree = None,
     activity_key="concept:name",
     case_key="case:concept:name",
+    activate=False,
 ):
 
     if isinstance(log, pd.DataFrame):
         # transform it to a list of traces
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
 
+    empty_traces = handle_empty_traces(log)
+    if empty_traces is not None:
+        return empty_traces
+
     if process_tree is None:
         process_tree = ProcessTree()
     dfg = DirectlyFollowsGraph(log)
     dfg_graph = dfg.graph
+
+    log_act_set = set([act for trace in log for act in trace])
     # Try to apply the cuts in order of precedence
     cut_classes = [ExclusiveChoiceCut, StrictSequenceCut, ConcurrentCut, LoopCut]
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
-    if len(dfg_graph.nodes) <= 1:
+    if len(dfg_graph.nodes) <= 1 or (
+        len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in list(dfg_graph.nodes)
+    ):
         parent = process_tree.parent
         # print(f"Applying base case to log {log}")
         process_tree = base_cases(
             log, process_tree, dfg_graph, activity_key=activity_key, case_key=case_key
         )
-        # print(f"BASE CASE TREE {process_tree}")
+        if ENABLE_PRINTS:
+            print(f"BASE CASE TREE {process_tree}")
 
         process_tree.parent = parent
         return process_tree
 
-    max_projections, max_op, max_size = None, None, 0
     for cut_class, op in zip(cut_classes, ops):
         cut = cut_class(dfg_graph)
         groups = cut.discover()
@@ -62,23 +89,34 @@ def apply_IM(
             sublogs = cut.project(
                 log, groups, activity_key=activity_key, case_key=case_key
             )
-            if len(sublogs) > max_size:
-                max_projections = sublogs
-                max_op = op
-                max_size = len(sublogs)
-    if max_projections and max_op:
-        # print(f"We will apply {op} to {log} with sublogs {sublogs} because it has size {max_size}")
-        for i in range(len(sublogs)):
-            child_node = apply_IM(
-                sublogs[i],
-                ProcessTree(),
-                activity_key=activity_key,
-                case_key=case_key,
-            )
-
-            add_child(process_tree, child_node)
-        return process_tree
-
+            for sublog in sublogs:
+                child_node = apply_IM(
+                    sublog,
+                    ProcessTree(),
+                    activity_key=activity_key,
+                    case_key=case_key,
+                    activate=activate,
+                )
+                add_child(process_tree, child_node)
+            if ENABLE_PRINTS:
+                print("***")
+                print("ACTS:", sorted(log_act_set))
+                print("OP:", op)
+                print("GROUPS:", [sorted(g) for g in groups])
+                print(
+                    "SUBLOGS:",
+                    [
+                        {
+                            "acts": sorted(set(a for t in sl for a in t)),
+                            "n_traces": len(sl),
+                            "n_empty": sum(1 for t in sl if len(t) == 0),
+                        }
+                        for sl in sublogs
+                    ],
+                )
+                print("SOURCE:", "cut")
+                print("***")
+            return process_tree
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
     order_of_fall_throughs = [
@@ -89,6 +127,7 @@ def apply_IM(
         n_tau,
         flower_model,
     ]
+    name_of_fall_throughs = ["empty", "once", "concur", "s_tau", "tau", "flower"]
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
         res = fallthrough(
@@ -99,8 +138,13 @@ def apply_IM(
             cut_order=cut_classes,
             im_function=apply_IM,
         )
-        # print(f"Trying fallthrough {name_of_fall_throughs[idx]} with res {res}")
         if res:
+            if ENABLE_PRINTS:
+                print("---")
+                print("ACTS:", sorted(log_act_set))
+                print("FALLTHROUGH:", name_of_fall_throughs[idx])
+                print("---")
+
             res.parent = process_tree.parent
             return res
     return ProcessTree()
@@ -128,18 +172,18 @@ def apply_binary_IM(
     ]
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
-    graph_nodes = list(dfg_graph.nodes)
-    # remove the artificial none node if it exists
-    if "ArtificialNoneNode" in graph_nodes:
-        graph_nodes.remove("ArtificialNoneNode")
-    if len(graph_nodes) <= 1:
+    if len(dfg_graph.nodes) <= 1 or (
+        len(dfg_graph.nodes) == 2 and "ActivityNoneNode" in list(dfg_graph.nodes)
+    ):
         parent = process_tree.parent
+        # print(f"Applying base case to log {log}")
         process_tree = base_cases(
             log, process_tree, dfg_graph, activity_key=activity_key, case_key=case_key
         )
+        # print(f"BASE CASE TREE {process_tree}")
+
         process_tree.parent = parent
         return process_tree
-
     for cut_class, op in zip(cut_classes, ops):
         cut = cut_class(dfg_graph)
         groups = cut.discover()
@@ -205,7 +249,6 @@ if __name__ == "__main__":
     from pm4py.objects.conversion.log.variants.df_to_event_log_1v import (
         apply as df_to_event_log,
     )
-    from pm4py.visualization.process_tree import visualizer as pt_visualizer
 
     def preprocess_log_v2(log):
         idx = 0
@@ -225,7 +268,8 @@ if __name__ == "__main__":
     cases = 0
     similarity_to_pm4py_bim = []
     similarity_to_pm4py_sim = []
-    for i in range(100):
+
+    for i in range(200):
         process_tree = simulate_process_tree()
         log = preprocess_log_v2(playout_process_tree(process_tree))
         log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)
@@ -238,7 +282,7 @@ if __name__ == "__main__":
         cases += len(log["case:concept:name"].unique())
         # BIM
         start_time = pd.Timestamp.now()
-        model_bim = apply_binary_IM(log)
+        model_bim = apply_IM(log)
         end_time = pd.Timestamp.now()
         times_BIM.append((end_time - start_time).total_seconds() * 1000)
         # SIM
@@ -250,12 +294,15 @@ if __name__ == "__main__":
         model_pm4py = inductive_miner.apply(df_to_event_log(log))
         end_time = pd.Timestamp.now()
         times_pm4py.append((end_time - start_time).total_seconds() * 1000)
+        sim_pm4py_sim = pm4py.behavioral_similarity(model_sim, model_pm4py)
+        print(f"MODEL SIM: {model_sim}")
+        print(f"MODEL PM4Py: {model_pm4py}")
+        print(sim_pm4py_sim)
+
         similarity_to_pm4py_bim.append(
             pm4py.behavioral_similarity(model_bim, model_pm4py)
         )
-        similarity_to_pm4py_sim.append(
-            pm4py.behavioral_similarity(model_sim, model_pm4py)
-        )
+        similarity_to_pm4py_sim.append(sim_pm4py_sim)
 
     # A histogram on runtimes (two boxplots)
     import matplotlib.pyplot as plt
@@ -282,85 +329,58 @@ if __name__ == "__main__":
     plt.plot(x_bim, y_bim, label="BIM")
     plt.plot(x_sim, y_sim, label="SIM")
 
-    plt.xlabel("Behavioral Similarity")
+    plt.xlabel("Behavioral Similarity (comp w/ PM4Py's version)")
     plt.ylabel("Cumulative Probability")
     plt.title("ECDF of Similarity Scores")
     plt.legend()
     plt.grid(True)
     plt.show()
-
+    """
     # import BPIC2017.xes
     log = pm4py.read_xes("./binary_im/BPIC2017.xes")
     # to a dataframe
     log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)
     print(
-        f"BPIC2017 log has {len(log)} events and {len(log['concept:name'].unique())} unique activities."
+        f"BPIC2012 log has {len(log)} events and {len(log['concept:name'].unique())} unique activities."
     )
     start_time = pd.Timestamp.now()
     model_bim = apply_IM(log)
     end_time = pd.Timestamp.now()
-    print(f"IM took {(end_time - start_time).total_seconds()} seconds on BPIC2017 log.")
+    print(f"IM took {(end_time - start_time).total_seconds()} seconds on BPIC2012 log.")
     start_time = pd.Timestamp.now()
     model_pm4py = inductive_miner.apply(df_to_event_log(log))
     end_time = pd.Timestamp.now()
     print(
-        f"PM4Py IM took {(end_time - start_time).total_seconds()} seconds on BPIC2017 log."
+        f"PM4Py IM took {(end_time - start_time).total_seconds()} seconds on BPIC2012 log."
     )
     # display model_bim
     gviz = pt_visualizer.apply(model_bim)
     pt_visualizer.view(gviz)
     print(
-        f"Similarity between Binary IM and PM4Py IM on BPIC2017 log: {pm4py.behavioral_similarity(model_bim, model_pm4py)}"
+        f"Similarity between Binary IM and PM4Py IM on BPIC2012 log: {pm4py.behavioral_similarity(model_bim, model_pm4py)}"
     )
-    print(f"Process tree discovered by Binary IM on BPIC2017 log: {model_bim}")
-    print(f"Process tree discovered by PM4Py IM on BPIC2017 log: {model_pm4py}")
 
-    """
-    data = pd.DataFrame([
-        # case 1
-        {"case:concept:name": "c1", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c1", "concept:name": "b", "time:timestamp": 2},
+    print(f"Process tree discovered by Binary IM on BPIC2012 log: {model_bim}")
+    print(f"Process tree discovered by PM4Py IM on BPIC2012 log: {model_pm4py}")
+    print(f"Similarity is {pm4py.behavioral_similarity(model_bim, model_pm4py)}")
 
-        # case 2
-        {"case:concept:name": "c2", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c2", "concept:name": "d", "time:timestamp": 2},
 
-        # case 3
-        {"case:concept:name": "c3", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c3", "concept:name": "e", "time:timestamp": 2},
-
-        # case 4
-        {"case:concept:name": "c4", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c4", "concept:name": "i", "time:timestamp": 2},
-        {"case:concept:name": "c4", "concept:name": "a", "time:timestamp": 3},
-
-        # case 5
-        {"case:concept:name": "c5", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c5", "concept:name": "i", "time:timestamp": 2},
-        {"case:concept:name": "c5", "concept:name": "o", "time:timestamp": 3},
-
-        # case 6
-        {"case:concept:name": "c6", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c6", "concept:name": "g", "time:timestamp": 2},
-        {"case:concept:name": "c6", "concept:name": "h", "time:timestamp": 3},
-        {"case:concept:name": "c6", "concept:name": "q", "time:timestamp": 4},
-
-        # case 7
-        {"case:concept:name": "c7", "concept:name": "c", "time:timestamp": 1},
-        {"case:concept:name": "c7", "concept:name": "g", "time:timestamp": 2},
-        {"case:concept:name": "c7", "concept:name": "p", "time:timestamp": 3},
-        {"case:concept:name": "c7", "concept:name": "l", "time:timestamp": 4},
-    ])
-    log = [
-        ['j', 'n', 'k'],
-        ['j', 'g', 'i'],
-        ['f', 'k'],
-        ['b'],
-        ['j'],
-        ['n', 'i'],
+    log1 = [
+        ['W_Call incomplete files', 'A_Incomplete', 'O_Create Offer', 'O_Created'],
+        ['W_Call incomplete files', 'A_Incomplete', 'O_Accepted', 'A_Pending'],
+        ['W_Call incomplete files', 'O_Accepted', 'A_Pending'],
+        ['W_Call incomplete files', 'A_Incomplete', 'A_Denied', 'O_Refused'],
+        ['O_Returned', 'O_Accepted', 'A_Pending'],
+        ['O_Returned'],
+        ['W_Shortened completion '],
+        ['O_Create Offer', 'O_Created'],
     ]
-    model_pm4py = apply_binary_IM(log)
-    model_my_miner = apply_IM(log)
-    print(f"IM: {model_pm4py}")
-    print(f"BIM: {model_my_miner}")
+
+
+    model_my_miner = apply_IM(log1)
+    model_pm4py = inductive_miner.apply(df_to_event_log(log1))
+    print(f"Model PM4Py: {model_pm4py}")
+    print(f"SIM: {model_my_miner}")
+    print(f"Sim: {pm4py.behavioral_similarity(model_my_miner, model_pm4py)}")
+    # Print
     """
