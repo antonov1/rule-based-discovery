@@ -3,7 +3,7 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.2.0
+    rev: v6.0.0
     hooks:
       - id: check-merge-conflict
       - id: check-added-large-files
@@ -17,7 +17,7 @@ repos:
 
   # To remove useless imports
   - repo: https://github.com/PyCQA/autoflake
-    rev: v2.3.1
+    rev: v2.3.3
     hooks:
       - id: autoflake
         args:
@@ -30,12 +30,18 @@ repos:
           ]
   # To sort imports alphabetically and automatically separate them into sections
   - repo: https://github.com/facebook/usort
-    rev: v1.0.7
+    rev: v1.1.3
     hooks:
       - id: usort
 
   # To format Python code
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 26.3.1
     hooks:
       - id: black
+  # Prevent pushing to master branch
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ["--branch", "master"]

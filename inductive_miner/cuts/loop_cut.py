@@ -2,9 +2,8 @@ from typing import List
 
 import networkx as nx
 import pandas as pd
-
-from cuts.base_cut import BaseCut
-from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
+from inductive_miner.cuts.base_cut import BaseCut
+from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 
 
 class LoopCut(BaseCut):
@@ -59,7 +58,7 @@ class LoopCut(BaseCut):
 
     def __reduce_dfg(self, do_partition: set, activities: set) -> List[set]:
         new_dfg = self.dfg.copy()
-        for (e, v) in self.dfg.edges:
+        for e, v in self.dfg.edges:
             # We get rid of all edges that are directly connected to the do_partition
             if e in do_partition or v in do_partition:
                 new_dfg.remove_edge(e, v)
@@ -75,7 +74,7 @@ class LoopCut(BaseCut):
         dfg: nx.DiGraph, groups: List[set], start_activities: set
     ) -> List[set]:
         for act in start_activities:
-            for (e, v) in dfg.edges:
+            for e, v in dfg.edges:
                 if e == act:
                     group_v = next((group for group in groups if v in group), None)
                     group_a = next((group for group in groups if act in group), None)
@@ -92,7 +91,7 @@ class LoopCut(BaseCut):
         dfg: nx.DiGraph, groups: List[set], end_activities: set
     ) -> List[set]:
         for act in end_activities:
-            for (e, v) in dfg.edges:
+            for e, v in dfg.edges:
                 if v == act:
                     group_e = next((group for group in groups if e in group), None)
                     group_a = next((group for group in groups if act in group), None)
@@ -116,7 +115,7 @@ class LoopCut(BaseCut):
             for a in groups[i]:
                 if merge:
                     break
-                for (x, b) in dfg_edges:
+                for x, b in dfg_edges:
                     if x == a and b in start_activities:
                         for s in start_activities:
                             if (a, s) not in dfg_edges:
@@ -144,7 +143,7 @@ class LoopCut(BaseCut):
             for a in groups[i]:
                 if merge:
                     break
-                for (b, x) in dfg_edges:
+                for b, x in dfg_edges:
                     if x == a and b in end_activities:
                         for e in end_activities:
                             if (e, a) not in dfg_edges:

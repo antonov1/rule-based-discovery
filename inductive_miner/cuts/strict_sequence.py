@@ -2,8 +2,8 @@ import sys
 from typing import List, Set
 
 import networkx as nx
-from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
-from cuts.sequence import SequenceCut
+from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
+from inductive_miner.cuts.sequence import SequenceCut
 
 
 class StrictSequenceCut(SequenceCut):

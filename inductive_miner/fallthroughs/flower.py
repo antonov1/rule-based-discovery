@@ -1,4 +1,4 @@
-from fallthroughs.fallthrough_utils import add_child
+from inductive_miner.fallthroughs.fallthrough_utils import add_child
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 
 

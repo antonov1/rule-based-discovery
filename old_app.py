@@ -1,8 +1,6 @@
 import streamlit as st
 from promoai.general_utils.ai_providers import AI_HELP_DEFAULTS, AI_MODEL_DEFAULTS
-
 from promoai.general_utils.llm_connection import LLMConnection
-
 
 st.markdown(
     """
@@ -184,7 +182,9 @@ st.markdown(
 # --- 2. THE UI CODE INSIDE TAB 1 ---
 with tab1:
     # Custom Header for the upload area
-    st.markdown('<p class="upload-text">📥 Import Event Log</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="upload-text">📥 Import Event Log</p>', unsafe_allow_html=True
+    )
     st.markdown(
         '<p class="upload-subtext">Upload your XES or GZ files to initialize the Rule-Based Inductive Miner agent.</p>',
         unsafe_allow_html=True,

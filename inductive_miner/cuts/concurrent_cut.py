@@ -1,10 +1,9 @@
 from typing import List
 
 import networkx as nx
-
 import pandas as pd
-from cuts.base_cut import BaseCut
-from cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
+from inductive_miner.cuts.base_cut import BaseCut
+from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 
 
 class ConcurrentCut(BaseCut):
