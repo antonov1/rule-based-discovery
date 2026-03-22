@@ -1,7 +1,7 @@
 from typing import Callable, Optional
 
 import networkx as nx
-from fallthroughs.fallthrough_utils import add_child
+from inductive_miner.fallthroughs.fallthrough_utils import add_child
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
@@ -42,7 +42,7 @@ def apply(
     log: list[list[str]],
     dfg: nx.DiGraph,
     cut_order: list[type],
-    **kwargs
+    **kwargs,
 ) -> Optional[ProcessTree]:
     candidate = detect(log, cut_order=cut_order)
     if candidate is None:

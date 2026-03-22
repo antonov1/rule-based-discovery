@@ -18,4 +18,4 @@ dependencies = [
     "typing>=3.7",
 ]
 [tool.setuptools]
-packages = ["cuts", "rules", "binary_im", "rule_extraction"]
+packages = ["inductive_miner", "rules", "rule_extraction"]

@@ -1,10 +1,11 @@
 import networkx as nx
 import pandas as pd
-from cuts.concurrent_cut import BinaryConcurrentCut, ConcurrentCut
-from cuts.exclusive import BinaryExclusiveChoiceCut, ExclusiveChoiceCut
-from cuts.loop_cut import BinaryLoopCut, LoopCut
-from cuts.sequence import BinarySequenceCut, SequenceCut
+from inductive_miner.cuts.concurrent_cut import BinaryConcurrentCut, ConcurrentCut
+from inductive_miner.cuts.exclusive import BinaryExclusiveChoiceCut, ExclusiveChoiceCut
+from inductive_miner.cuts.loop_cut import BinaryLoopCut, LoopCut
+from inductive_miner.cuts.sequence import BinarySequenceCut, SequenceCut
 from utils.directly_follows_graph import DirectlyFollowsGraph
+
 
 # ====== TESTS FOR CONCURRENT CUT ======
 def test_concurrent_cut_binary_simple():

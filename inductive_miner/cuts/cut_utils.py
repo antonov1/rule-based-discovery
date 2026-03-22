@@ -1,6 +1,6 @@
 from typing import List
 
-ENABLE_EXPLICIT_EMPTY_TRACE_CHECK = True
+ENABLE_EXPLICIT_EMPTY_TRACE_CHECK = False
 
 
 def merge_groups(groups: List[set], a: str, b: str) -> List[set]:
