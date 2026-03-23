@@ -1,0 +1,195 @@
+import ast
+import re
+from typing import Any, Callable, List, Optional, TypeVar
+
+from llm_connection.prompting import generate_declare_prompt
+from promoai.general_utils.llm_connection import (
+    generate_result_with_error_handling,
+    LLMConnection,
+    query_llm,
+)
+from promoai.model_generation.code_extraction import execute_code_and_get_variable
+from promoai.prompting.prompt_engineering import ERROR_MESSAGE_FOR_MODEL_GENERATION
+from rules import (
+    AtMostOnceRule,
+    CoExistenceRule,
+    EndRule,
+    ExistenceRule,
+    InitializationRule,
+    NotCoExistenceRule,
+    PrecedenceRule,
+    RespondedExistenceRule,
+    ResponseRule,
+)
+
+T = TypeVar("T")
+
+ERROR_MESSAGE_CODE_GENERATION_DECLARE = (
+    "Failed to generate DECLARE rules. Follow strictly the output format, e.g.,"
+    " ```python"
+    "rule1 = AtMost1('A') "
+    "```."
+)
+
+
+def generate_result_with_error_handling(
+    conversation: List[dict[str:str]],
+    extraction_function: Callable[[str, Any], T],
+    api_key: str,
+    llm_name: str,
+    ai_provider: str,
+    llm_args: Optional[dict] = None,
+    max_iterations=5,
+    additional_iterations=5,
+    standard_error_message=ERROR_MESSAGE_FOR_MODEL_GENERATION,
+) -> tuple[str, any, list[Any]]:
+    error_history = []
+    for iteration in range(max_iterations + additional_iterations):
+        response = query_llm(conversation, api_key, llm_name, ai_provider, llm_args)
+        try:
+            conversation.append({"role": "assistant", "content": response})
+            auto_duplicate = iteration >= max_iterations
+            code, result = extraction_function(response, auto_duplicate)
+            return code, result, conversation  # Break loop if execution is successful
+        except Exception as e:
+            error_description = str(e)
+            error_history.append(error_description)
+            if True:
+                print("Error detected in iteration " + str(iteration + 1))
+                print("\t" + error_description.replace("\n", " ").replace("\r", " "))
+            new_message = (
+                f"Executing your code led to an error! "
+                + standard_error_message
+                + "This is the error"
+                f" message: {error_description}"
+            )
+            conversation.append(
+                {"role": "user", "content": new_message, "type": "error"}
+            )
+
+    raise Exception(
+        llm_name
+        + " failed to fix the errors after "
+        + str(max_iterations + 5)
+        + " iterations! This is the error history: "
+        + str(error_history)
+    )
+
+
+def query_llm_for_declare_rules(
+    process_description, activities, llm_connection: LLMConnection
+):
+    prompt = generate_declare_prompt(process_description, activities)
+    msg_history = [{"role": "user", "content": prompt}]
+
+    def partial_code_extraction(code, auto_duplicate=False):
+        return code_extraction(code, activities=activities)
+
+    try:
+        _, rules, _ = generate_result_with_error_handling(
+            msg_history,
+            extraction_function=partial_code_extraction,
+            llm_name=llm_connection.llm_name,
+            ai_provider=llm_connection.ai_provider,
+            api_key=llm_connection.api_key,
+            max_iterations=3,
+            additional_iterations=2,
+            standard_error_message=ERROR_MESSAGE_CODE_GENERATION_DECLARE,
+        )
+        return rules
+    except ValueError as e:
+        raise ValueError(f"Error during LLM query: {str(e)}")
+    except ValueError as e:
+        error_message = f"Error extracting code: {str(e)}."
+        raise ValueError(error_message)
+
+
+def code_extraction(code_snippet: str, activities=None):
+    """
+    Extracts code from a given code snippet, removing any markdown formatting.
+    """
+    # Check that the code is wrapped in ```python ... ```
+    pattern = r"```python\s*(.*?)\s*```"
+    match = re.search(pattern, code_snippet, re.DOTALL)
+
+    if not match:
+        raise ValueError(
+            "Code snippet is not properly formatted with ```python ... ```"
+        )
+    if has_imports(match.group(1)):
+        raise ValueError("Code snippet should not contain any import statements!")
+    namespace = {
+        "AtMost1": AtMostOnceRule,
+        "CoExistence": CoExistenceRule,
+        "End": EndRule,
+        "Existence": ExistenceRule,
+        "Init": InitializationRule,
+        "Precedence": PrecedenceRule,
+        "RespondedExistence": RespondedExistenceRule,
+        "Response": ResponseRule,
+        "NotCoExistence": NotCoExistenceRule,
+    }
+    code = match.group(1).strip()
+    # remove all leading indentation from the code
+    code = process_code(code, activities=activities)
+    code = re.sub(r"^\s+", "", code, flags=re.MULTILINE)
+    print(f"Extracted code:\n{code}")
+
+    return code, execute_code_and_get_variable(code, "result", namespace=namespace)
+
+
+def has_imports(code: str):
+    tree = ast.parse(code)
+    return any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in tree.body)
+
+
+def process_code(code, activities=None):
+    tree = ast.parse(code)
+
+    rules = []
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            var_name = (
+                node.targets[0].id if isinstance(node.targets[0], ast.Name) else None
+            )
+            rule_type = (
+                node.value.func.id if isinstance(node.value.func, ast.Name) else None
+            )
+            if rule_type not in [
+                "AtMost1",
+                "CoExistence",
+                "End",
+                "Existence",
+                "Init",
+                "Precedence",
+                "RespondedExistence",
+                "Response",
+                "NotCoExistence",
+            ]:
+                raise ValueError(
+                    f"Invalid rule type: {rule_type}. Allowed types are: AtMost1, CoExistence, End, Existence, Init, Precedence, RespondedExistence, Response, NotCoExistence."
+                )
+
+            args = []
+            for arg in node.value.args:
+                if isinstance(arg, ast.Constant):
+                    args.append(arg.value)
+                    if activities is not None and arg.value not in activities:
+                        raise ValueError(
+                            f"Invalid activity: {arg.value}. Allowed activities are: {', '.join(activities)}."
+                        )
+
+            rules.append(
+                {
+                    "name": var_name,
+                    "type": rule_type,
+                    "args": args,
+                }
+            )
+    sanitized_code = "\n".join(
+        f"{rule['name']} = {rule['type']}({repr(rule['args'])})" for rule in rules
+    )
+    names = [rule["name"] for rule in rules]
+    sanitized_code += "\nresult = [" + ", ".join(names) + "]"
+    return sanitized_code

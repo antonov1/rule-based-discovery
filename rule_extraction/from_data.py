@@ -2,8 +2,6 @@ from collections import Counter
 from typing import List
 
 import pandas as pd
-from mlxtend.frequent_patterns import apriori, association_rules
-from mlxtend.preprocessing import TransactionEncoder
 from rules import (
     AbstractRule,
     AtMostOnceRule,
@@ -56,21 +54,6 @@ def check_start_end(log, min_support: float = 0.5):
     return {"init_rules": init_rules, "end_rules": end_rules}
 
 
-def rule_mining(
-    log, min_support: float = 0.5, min_confidence: float = 0.7, rule_size: int = 2
-):
-    te = TransactionEncoder()
-    te_ary = te.fit(log).transform(log)
-    df = pd.DataFrame(te_ary, columns=te.columns_)
-    frequent_itemsets = apriori(df, min_support=min_support, use_colnames=True)
-    frequent_itemsets["length"] = frequent_itemsets["itemsets"].apply(lambda x: len(x))
-    frequent_itemsets = frequent_itemsets[frequent_itemsets["length"] <= rule_size]
-    rules = association_rules(
-        frequent_itemsets, metric="confidence", min_threshold=min_confidence
-    )
-    return rules[["antecedents", "consequents", "support", "confidence", "lift"]]
-
-
 def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule]:
     extracted_rules = []
 
@@ -93,30 +76,10 @@ def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule
             and rule.calc_confidence() >= min_confidence
         ):
             extracted_rules.append(rule)
-    mined = rule_mining(
-        log,
-        min_support=min_support,
-        min_confidence=min_confidence,
-        rule_size=2,
-    )
-    unary_activities = set([a for trace in log for a in trace])
-    binary_pairs = set()
-
-    # frozensets from mlxtend
-    for _, row in mined.iterrows():
-        antecedents = set(row["antecedents"])
-        consequents = set(row["consequents"])
-
-        all_acts = antecedents | consequents
-
-        if len(all_acts) == 2:
-            a, b = sorted(all_acts)
-            binary_pairs.add((a, b))
-            # directional candidates too
-            if len(antecedents) == 1 and len(consequents) == 1:
-                x = next(iter(antecedents))
-                y = next(iter(consequents))
-                binary_pairs.add((x, y))
+    unary_activities = sorted(set(a for trace in log for a in trace))
+    binary_pairs = {
+        (a, b) for a in unary_activities for b in unary_activities if a != b
+    }
 
     for act in sorted(unary_activities):
         for rule_cls in [ExistenceRule, AtMostOnceRule]:
@@ -176,4 +139,7 @@ if __name__ == "__main__":
         ["B", "D", "F"],
     ]
     rules = extract(dataset, 0.5, 0.5)
+    for rule in rules:
+        print(rule)
+        print(rule.get_confidence())
     print(rules)

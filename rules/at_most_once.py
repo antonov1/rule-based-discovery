@@ -1,8 +1,9 @@
-from abc import ABC
 from typing import Any, List
 
+from rules.abstract_rule import AbstractRule
 
-class AtMostOnceRule(ABC):
+
+class AtMostOnceRule(AbstractRule):
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 1:
             raise ValueError("AtMostOnceRule must have exactly one activity.")
