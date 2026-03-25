@@ -4,12 +4,41 @@ import networkx as nx
 import pandas as pd
 from inductive_miner.cuts.base_cut import BaseCut
 from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
+from rules import (
+    AbstractRule,
+    CoExistenceRule,
+    EndRule,
+    ExistenceRule,
+    InitializationRule,
+    PrecedenceRule,
+)
 
 
 class ExclusiveChoiceCut(BaseCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
         super().__init__("ExclusiveChoiceCut", list(dfg.nodes), dfg)
         self.dfg = dfg
+
+    @staticmethod
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+        unsat_rules = []
+        for rule in rules:
+            if isinstance(rule, ExistenceRule):
+                if any(rule.target_activity in group for group in groups):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
+                if any(rule.target_activity in group for group in groups):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, PrecedenceRule) or isinstance(rule, CoExistenceRule):
+                group_a = next(
+                    (group for group in groups if rule.activity_a in group), None
+                )
+                group_b = next(
+                    (group for group in groups if rule.activity_b in group), None
+                )
+                if group_a is not None and group_b is not None and group_a != group_b:
+                    unsat_rules.append(rule)
+        return unsat_rules
 
     def discover(self) -> List[set]:
         # To discover partitions of the graph where no direct follows relations exist between partitions

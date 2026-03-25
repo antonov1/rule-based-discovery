@@ -5,6 +5,7 @@ from .end_rule import EndRule
 from .existence import ExistenceRule
 from .initialization import InitializationRule
 from .not_coexistence import NotCoExistenceRule
+from .not_succession import NotSuccessionRule
 from .precedence import PrecedenceRule
 from .responded_existence import RespondedExistenceRule
 from .response import ResponseRule

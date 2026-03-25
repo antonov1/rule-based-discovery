@@ -1,8 +1,11 @@
 from typing import Callable, List
 
 import networkx as nx
+from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
+from inductive_miner.im_utils import repair_behavior
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from rules import AbstractRule
 
 
 def detect(log: List[List[str]]):
@@ -21,18 +24,42 @@ def project(log: List[List[str]], candidate: str) -> List[List[str]]:
     return new_log
 
 
-def apply(im_function: Callable, log: List[List[str]], dfg: nx.DiGraph, **kwargs):
+def apply(
+    im_function: Callable,
+    log: List[List[str]],
+    dfg: nx.DiGraph,
+    rules: List[AbstractRule] = None,
+    **kwargs,
+):
     candidate = detect(log)
     if not candidate:
         return None
     acts = list(dfg.nodes)
 
-    if "ArtificialNoneNode" in acts:
-        raise ValueError("Empty Trace detected in Activity-Once-Per-Trace!")
+    if rules:
+        acts = set(act for trace in log for act in trace)
+        unsat_rules = ConcurrentCut.check_rules(rules, [set(), acts])
+        if unsat_rules:
+            return repair_behavior(log, unsat_rules, [set(), acts], im_function, rules)
 
+    # Concurrent Cut (Parallel)
     parent = ProcessTree(operator=Operator.PARALLEL)
+    proj_rules = (
+        ConcurrentCut.project_rules(
+            rules, [set(), set(act for trace in log for act in trace)]
+        )[1]
+        if rules
+        else None
+    )
     add_child(parent=parent, child=ProcessTree(label=candidate))
     # Get rid of candidates
     projected_log = project(log, candidate=candidate)
-    add_child(parent=parent, child=im_function(projected_log, ProcessTree()))
+    add_child(
+        parent=parent,
+        child=(
+            im_function(projected_log, proj_rules)
+            if proj_rules
+            else im_function(projected_log)
+        ),
+    )
     return parent

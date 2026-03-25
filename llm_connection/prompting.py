@@ -41,6 +41,7 @@ def generate_declare_prompt(process_description, activities):
         "- Existence(A): Activity A occurs at least once per trace.\n"
         "- CoExistence(A, B): If A occurs, B must occur; if B occurs, A must occur.\n"
         "- NotCoExistence(A, B): Activities A and B cannot coexist in the same trace.\n"
+        "- NotSuccession(A, B): Activity B never follows activity A in the same trace.\n"
         "- Precedence(A, B): Activity B can only occur if activity A has occurred before it.\n"
         "- RespondedExistence(A, B): If activity A occurs, activity B must also occur (anywhere in the trace).\n"
         "- Response(A, B): If activity A occurs, activity B must eventually follow it.\n\n"

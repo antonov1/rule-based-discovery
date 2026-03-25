@@ -8,12 +8,78 @@ from inductive_miner.cuts.cut_utils import (
     ENABLE_EXPLICIT_EMPTY_TRACE_CHECK,
     merge_groups,
 )
+from rules import (
+    AbstractRule,
+    EndRule,
+    InitializationRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
+    PrecedenceRule,
+    ResponseRule,
+)
 
 
 class SequenceCut(BaseCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
         super().__init__("SequenceCut", list(dfg.nodes), dfg)
         self.dfg = dfg
+
+    @staticmethod
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+        unsat_rules = []
+        for rule in rules:
+            if isinstance(rule, InitializationRule):
+                if rule.target_activity not in groups[0]:
+                    unsat_rules.append(rule)
+            elif isinstance(rule, EndRule):
+                if rule.target_activity not in groups[-1]:
+                    unsat_rules.append(rule)
+            elif isinstance(rule, NotCoExistenceRule):
+                group_a_idx = [
+                    i for i in range(len(groups)) if rule.activity_a in groups[i]
+                ]
+                group_a_idx = group_a_idx[0] if group_a_idx else None
+                group_b_idx = [
+                    i for i in range(len(groups)) if rule.activity_b in groups[i]
+                ]
+                group_b_idx = group_b_idx[0] if group_b_idx else None
+                if (
+                    group_a_idx is not None
+                    and group_b_idx is not None
+                    and group_a_idx != group_b_idx
+                ):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, PrecedenceRule) or isinstance(rule, ResponseRule):
+                group_a_idx = [
+                    i for i in range(len(groups)) if rule.activity_a in groups[i]
+                ]
+                group_a_idx = group_a_idx[0] if group_a_idx else None
+                group_b_idx = [
+                    i for i in range(len(groups)) if rule.activity_b in groups[i]
+                ]
+                group_b_idx = group_b_idx[0] if group_b_idx else None
+                if (
+                    group_a_idx is not None
+                    and group_b_idx is not None
+                    and group_a_idx >= group_b_idx
+                ):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, NotSuccessionRule):
+                group_a_idx = [
+                    i for i in range(len(groups)) if rule.activity_a in groups[i]
+                ]
+                group_a_idx = group_a_idx[0] if group_a_idx else None
+                group_b_idx = [
+                    i for i in range(len(groups)) if rule.activity_b in groups[i]
+                ]
+                group_b_idx = group_b_idx[0] if group_b_idx else None
+                if (
+                    group_a_idx is not None
+                    and group_b_idx is not None
+                    and group_a_idx < group_b_idx
+                ):
+                    unsat_rules.append(rule)
+        return unsat_rules
 
     def __construct_transitive_successors_and_predecessors(
         self, activities: set, dfg: nx.DiGraph

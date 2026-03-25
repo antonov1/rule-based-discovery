@@ -1,5 +1,8 @@
+from typing import Callable, List
+
 import pandas as pd
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from rules import AbstractRule
 
 
 def add_child(parent, child):
@@ -7,52 +10,98 @@ def add_child(parent, child):
     parent.children.append(child)
 
 
+def intersection_of_logs(logs: List[List[str]]) -> List[str]:
+    if not logs:
+        return []
+    intersection = logs[0]
+    for log in logs[1:]:
+        # keep only traces that are in both logs
+        intersection = [trace for trace in intersection if trace in log]
+    return intersection
+
+
 def base_cases(
     log: pd.DataFrame,
     process_tree: ProcessTree,
     dfg_graph,
-    activity_key="concept:name",
-    case_key="case:concept:name",
+    **kwargs,
 ):
-    if len(dfg_graph.nodes) == 0:
-        # This means we have only empty traces, so we return a process tree with a single tau node
+    """
+    Handle inductive miner base cases.
+
+    Cases:
+    - No nodes  -> return tau.
+    - One real activity node (optionally plus ArtificialNoneNode):
+        - self-loop + empty trace -> LOOP(tau, activity)
+        - self-loop only        -> LOOP(activity, tau)
+        - no self-loop          -> activity leaf
+    - Otherwise: not a base case, raise an error.
+    """
+    nodes = set(dfg_graph.nodes)
+
+    if "ArtificialNoneNode" in nodes:
+        raise Exception(f"Base case error: log has empty traces.")
+
+    if not nodes:
         return process_tree
-    elif len(dfg_graph.nodes) == 1 or (
-        len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in dfg_graph.nodes
-    ):
-        # This is rather specific case, we have to check if the single activity has no loop
-        activity_node = [n for n in dfg_graph.nodes if n != "ArtificialNoneNode"]
-        if not activity_node:
-            new_tree = ProcessTree()
-            return new_tree
-        activity_node = activity_node[0]
-        if dfg_graph.has_edge(activity_node, activity_node):
-            # Check if None is part of the log
-            if [] in log:
-                # We have a loop, activity is on the right side
-                process_tree = ProcessTree(operator=Operator.LOOP)
-                tau_leaf = ProcessTree()
-                tau_leaf.parent = process_tree
-                activity_leaf = ProcessTree(label=activity_node)
-                activity_leaf.parent = process_tree
-                process_tree.children.extend([tau_leaf, activity_leaf])
-                return process_tree
-            else:
-                # We have a loop, activity is on the left side
-                process_tree = ProcessTree(operator=Operator.LOOP)
-                activity_tree = ProcessTree(label=activity_node)
-                activity_tree.parent = process_tree
-                tau_leaf = ProcessTree()
-                tau_leaf.parent = process_tree
-                process_tree.children.extend([activity_tree, tau_leaf])
 
-                return process_tree
-        else:
-            # We have no loop, so we return a process tree with a single activity node
-            process_tree = ProcessTree(label=activity_node)
-            return process_tree
+    if len(nodes) == 1:
+        return _build_single_activity_tree(log, dfg_graph, nodes)
 
-    print(
-        f"For log {log} we have more than one activity, but we couldn't find any cut. This should not happen."
+    raise Exception(
+        f"Base case error: log has multiple activities but no cut was found."
     )
-    raise Exception("Base case error: more than one activity but no cut found")
+
+
+def _build_single_activity_tree(log, dfg_graph, nodes) -> ProcessTree:
+    if not nodes:
+        return ProcessTree()  # Tau
+
+    activity = nodes.pop()
+
+    if not dfg_graph.has_edge(activity, activity):
+        return ProcessTree(label=activity)
+
+    has_empty_trace = [] in log
+    if has_empty_trace:
+        return _build_loop_tree(do_first=None, redo=activity)
+
+    return _build_loop_tree(do_first=activity, redo=None)
+
+
+def _build_loop_tree(do_first=None, redo=None) -> ProcessTree:
+    """
+    Build a LOOP tree with two children.
+    Use None to indicate a tau child.
+    """
+    root = ProcessTree(operator=Operator.LOOP)
+
+    first_child = ProcessTree() if do_first is None else ProcessTree(label=do_first)
+    second_child = ProcessTree() if redo is None else ProcessTree(label=redo)
+
+    first_child.parent = root
+    second_child.parent = root
+    root.children.extend([first_child, second_child])
+
+    return root
+
+
+def repair_behavior(
+    log,
+    unsat_rules: List[AbstractRule],
+    im_function: Callable,
+    original_rules: List[AbstractRule],
+):
+    sat_traces = [[] for _ in range(len(unsat_rules))]
+    for i in range(len(unsat_rules)):
+        rule = unsat_rules[i]
+        sublog = rule.apply(log)
+        sat_traces[i] = sublog
+    intersection = intersection_of_logs(sat_traces)
+    if len(intersection) > 0:
+        print(
+            f"Refined log has {len(intersection)} traces that satisfy the unsatisfied rules. Applying IM to the refined log."
+        )
+        return im_function(intersection, original_rules)
+    else:
+        return ProcessTree()  # Tau

@@ -17,6 +17,7 @@ from rules import (
     ExistenceRule,
     InitializationRule,
     NotCoExistenceRule,
+    NotSuccessionRule,
     PrecedenceRule,
     RespondedExistenceRule,
     ResponseRule,
@@ -128,6 +129,7 @@ def code_extraction(code_snippet: str, activities=None):
         "RespondedExistence": RespondedExistenceRule,
         "Response": ResponseRule,
         "NotCoExistence": NotCoExistenceRule,
+        "NotSuccession": NotSuccessionRule,
     }
     code = match.group(1).strip()
     # remove all leading indentation from the code
@@ -166,6 +168,7 @@ def process_code(code, activities=None):
                 "RespondedExistence",
                 "Response",
                 "NotCoExistence",
+                "NotSuccession",
             ]:
                 raise ValueError(
                     f"Invalid rule type: {rule_type}. Allowed types are: AtMost1, CoExistence, End, Existence, Init, Precedence, RespondedExistence, Response, NotCoExistence."
