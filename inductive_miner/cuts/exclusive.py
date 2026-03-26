@@ -11,6 +11,8 @@ from rules import (
     ExistenceRule,
     InitializationRule,
     PrecedenceRule,
+    RespondedExistenceRule,
+    ResponseRule,
 )
 
 
@@ -29,7 +31,12 @@ class ExclusiveChoiceCut(BaseCut):
             elif isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
                 if any(rule.target_activity in group for group in groups):
                     unsat_rules.append(rule)
-            elif isinstance(rule, PrecedenceRule) or isinstance(rule, CoExistenceRule):
+            elif (
+                isinstance(rule, PrecedenceRule)
+                or isinstance(rule, CoExistenceRule)
+                or isinstance(rule, ResponseRule)
+                or isinstance(rule, RespondedExistenceRule)
+            ):
                 group_a = next(
                     (group for group in groups if rule.activity_a in group), None
                 )

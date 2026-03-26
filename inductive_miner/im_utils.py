@@ -1,6 +1,6 @@
 from typing import Callable, List
 
-import pandas as pd
+from inductive_miner.cuts import LoopCut
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -21,9 +21,11 @@ def intersection_of_logs(logs: List[List[str]]) -> List[str]:
 
 
 def base_cases(
-    log: pd.DataFrame,
+    log: List[List[str]],
     process_tree: ProcessTree,
     dfg_graph,
+    im_function: Callable = None,
+    rules: List[AbstractRule] = None,
     **kwargs,
 ):
     """
@@ -46,14 +48,16 @@ def base_cases(
         return process_tree
 
     if len(nodes) == 1:
-        return _build_single_activity_tree(log, dfg_graph, nodes)
+        return _build_single_activity_tree(log, dfg_graph, nodes, im_function, rules)
 
     raise Exception(
         f"Base case error: log has multiple activities but no cut was found."
     )
 
 
-def _build_single_activity_tree(log, dfg_graph, nodes) -> ProcessTree:
+def _build_single_activity_tree(
+    log, dfg_graph, nodes, im_function, rules
+) -> ProcessTree:
     if not nodes:
         return ProcessTree()  # Tau
 
@@ -64,7 +68,20 @@ def _build_single_activity_tree(log, dfg_graph, nodes) -> ProcessTree:
 
     has_empty_trace = [] in log
     if has_empty_trace:
+        if rules:
+            group_0 = set()
+            group_1 = set(activity)
+            unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
+            if len(unsat_rules) > 0:
+                return repair_behavior(log, unsat_rules, im_function, rules)
+
         return _build_loop_tree(do_first=None, redo=activity)
+    if rules:
+        group_0 = set(activity)
+        group_1 = set()
+        unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
+        if len(unsat_rules) > 0:
+            return repair_behavior(log, unsat_rules, im_function, rules)
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -78,7 +95,6 @@ def _build_loop_tree(do_first=None, redo=None) -> ProcessTree:
 
     first_child = ProcessTree() if do_first is None else ProcessTree(label=do_first)
     second_child = ProcessTree() if redo is None else ProcessTree(label=redo)
-
     first_child.parent = root
     second_child.parent = root
     root.children.extend([first_child, second_child])
@@ -98,10 +114,11 @@ def repair_behavior(
         sublog = rule.apply(log)
         sat_traces[i] = sublog
     intersection = intersection_of_logs(sat_traces)
+    print(f"Original log was: {log}, repaired log is: {intersection}")
+    if len(intersection) == len(log):
+        # No progress, continue trying
+        return None
     if len(intersection) > 0:
-        print(
-            f"Refined log has {len(intersection)} traces that satisfy the unsatisfied rules. Applying IM to the refined log."
-        )
         return im_function(intersection, original_rules)
     else:
         return ProcessTree()  # Tau

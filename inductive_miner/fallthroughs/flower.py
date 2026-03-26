@@ -13,7 +13,7 @@ def apply(im_function, log, rules=None, **kwargs) -> ProcessTree:
     if rules:
         unsat_rules = LoopCut.check_rules(rules, groups)
         if unsat_rules:
-            return repair_behavior(log, unsat_rules, groups, im_function, rules)
+            return repair_behavior(log, unsat_rules, im_function, rules)
 
     parent = ProcessTree(operator=Operator.LOOP)
     do_child = ProcessTree()

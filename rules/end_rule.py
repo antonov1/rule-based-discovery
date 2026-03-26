@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class EndRule(AbstractRule):
+    "This rule states that the process must start with the specified activity."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 1:
             raise ValueError("EndRule must have exactly one activity.")
@@ -26,7 +28,7 @@ class EndRule(AbstractRule):
     def apply(self, data) -> List[Any]:
         self.data_len = len(data)
         self.valid_traces = [
-            trace for trace in data if trace and trace[0] == self.target_activity
+            trace for trace in data if trace and trace[-1] == self.target_activity
         ]
         self.valid_traces_len = len(self.valid_traces)
         return self.valid_traces

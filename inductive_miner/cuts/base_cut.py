@@ -1,7 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Any, List, Union
 
-from rules import AbstractRule
+from rules import (
+    AbstractRule,
+    CoExistenceRule,
+    ExistenceRule,
+    PrecedenceRule,
+    RespondedExistenceRule,
+    ResponseRule,
+)
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
 
@@ -48,7 +55,26 @@ class BaseCut(ABC):
                     if group_a_idx is not None and group_b_idx is not None:
                         if group_a_idx != group_b_idx:
                             # We have just eliminated a rule
-                            continue
+                            if isinstance(rule, ResponseRule) or isinstance(
+                                rule, RespondedExistenceRule
+                            ):
+                                # We need to make sure that the second rule occurs
+                                # To avoid tricky situations
+                                projected_rules[group_b_idx].append(
+                                    ExistenceRule(rule.activity_b)
+                                )
+                            elif isinstance(rule, CoExistenceRule):
+                                # Both should exist, otherwise, hard
+                                projected_rules[group_a_idx].append(
+                                    ExistenceRule(rule.activity_a)
+                                )
+                                projected_rules[group_b_idx].append(
+                                    ExistenceRule(rule.activity_b)
+                                )
+                            elif isinstance(rule, PrecedenceRule):
+                                projected_rules[group_a_idx].append(
+                                    ExistenceRule(rule.activity_a)
+                                )
                         else:
                             projected_rules[group_a_idx].append(rule)
         return projected_rules

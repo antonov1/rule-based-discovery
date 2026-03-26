@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class PrecedenceRule(AbstractRule):
+    "This rule states that the second activity can only occur if the first activity has occurred directly it in the trace."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
             raise ValueError("PrecedenceRule must have exactly two activities.")

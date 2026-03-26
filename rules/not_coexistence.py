@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class NotCoExistenceRule(AbstractRule):
+    "This rule states that the two specified activities cannot coexist in the same trace."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
             raise ValueError("NotCoExistenceRule must have exactly two activities.")

@@ -40,7 +40,7 @@ def apply(
         acts = set(act for trace in log for act in trace)
         unsat_rules = ConcurrentCut.check_rules(rules, [set(), acts])
         if unsat_rules:
-            return repair_behavior(log, unsat_rules, [set(), acts], im_function, rules)
+            return repair_behavior(log, unsat_rules, im_function, rules)
 
     # Concurrent Cut (Parallel)
     parent = ProcessTree(operator=Operator.PARALLEL)

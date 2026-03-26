@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class ResponseRule(AbstractRule):
+    "This rule states that if the first activity occurs, the second activity must eventually follow"
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
             raise ValueError("ResponseRule must have exactly two activities.")

@@ -11,6 +11,7 @@ from rules import (
     EndRule,
     ExistenceRule,
     InitializationRule,
+    NotCoExistenceRule,
     NotSuccessionRule,
     PrecedenceRule,
     ResponseRule,
@@ -40,6 +41,7 @@ class LoopCut(BaseCut):
                 isinstance(rule, CoExistenceRule)
                 or isinstance(rule, NotSuccessionRule)
                 or isinstance(rule, ResponseRule)
+                or isinstance(rule, NotCoExistenceRule)
             ):
                 # In response, we have <x,y,x> obvious violation so they should appear together in the same group
                 group_a = next(

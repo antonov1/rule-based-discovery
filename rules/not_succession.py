@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class NotSuccessionRule(AbstractRule):
+    "This rule states that the activity B does not follow the activity A."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
             raise ValueError("NotSuccessionRule must have exactly two activities.")
@@ -28,7 +30,7 @@ class NotSuccessionRule(AbstractRule):
         valid_traces = []
         for trace in data:
             if self.activity_a not in trace or self.activity_b not in trace:
-                continue
+                valid_traces.append(trace)
             else:
                 first_occurrence_a = min(
                     [i for i in range(len(trace)) if trace[i] == self.activity_a]

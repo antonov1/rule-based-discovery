@@ -4,7 +4,9 @@ import tempfile
 
 import pm4py
 import streamlit as st
+from inductive_miner.main import apply_IM, apply_IM_with_rules
 from llm_connection.query import query_llm_for_declare_rules
+from pm4py.visualization.process_tree import visualizer as pt_visualizer
 from powl import import_event_log
 from promoai.general_utils.ai_providers import (
     AI_HELP_DEFAULTS,
@@ -202,7 +204,7 @@ def rule_discovery():
             and any(act in str(r) for act in current_f_act)
         ]
         filtered_rules.sort(
-            key=lambda r: (r.get_confidence(), r.get_support()), reverse=True
+            key=lambda r: (r.get_support(), r.get_confidence()), reverse=True
         )
 
         st.markdown("### 📋 Rule Discovery Workspace")
@@ -497,26 +499,30 @@ def miner_page():
             unsafe_allow_html=True,
         )
 
-        if "data_ready" not in st.session_state or "analysis" not in st.session_state:
-            st.warning("WIP.")
+        st.markdown("### 3. Process Discovery 🏗️")
+        st.caption("Convert discovered rules into a visual process model.")
+        model = None
+        if len(st.session_state["selected_rules"]) > 0:
+
+            model = apply_IM_with_rules(
+                log=preprocess_log(st.session_state["event_log"]),
+                rules=st.session_state["selected_rules"],
+            )
         else:
-            st.markdown("### 3. Process Discovery 🏗️")
-            st.caption("Convert discovered rules into a visual process model.")
+            model = apply_IM(preprocess_log(st.session_state["event_log"]))
 
-            with st.container(border=True):
-                st.info(
-                    "Visualization engine is ready. Select format to generate model."
-                )
+        if model is not None:
+            st.markdown("### Selected rules \n")
+            st.write(st.session_state["selected_rules"])
+            parameters = {
+                pt_visualizer.Variants.WO_DECORATION.value.Parameters.FORMAT: "svg"
+            }
 
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.button("BPMN Model", use_container_width=True)
-                with c2:
-                    st.button("Petri Net", use_container_width=True)
-                with c3:
-                    st.button("Process Tree", use_container_width=True)
-
-                st.divider()
+            gviz = pt_visualizer.apply(model, parameters=parameters)
+            svg_str = gviz.pipe(format="svg").decode("utf-8")
+            st.image(svg_str)
+        else:
+            st.warning("No model discovered!")
 
     st.divider()
 

@@ -4,6 +4,8 @@ from rules.abstract_rule import AbstractRule
 
 
 class RespondedExistenceRule(AbstractRule):
+    "This rule states that if the first activity occurs, the second activity must also occur at least once in the trace."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
             raise ValueError("RespondedExistenceRule must have exactly two activities.")
