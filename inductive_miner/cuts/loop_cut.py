@@ -4,12 +4,59 @@ import networkx as nx
 import pandas as pd
 from inductive_miner.cuts.base_cut import BaseCut
 from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
+from rules import (
+    AbstractRule,
+    AtMostOnceRule,
+    CoExistenceRule,
+    EndRule,
+    ExistenceRule,
+    InitializationRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
+    PrecedenceRule,
+    ResponseRule,
+)
 
 
 class LoopCut(BaseCut):
     def __init__(self, dfg: nx.DiGraph) -> None:
         super().__init__("LoopCut", list(dfg.nodes), dfg)
         self.dfg = dfg
+
+    @staticmethod
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+        unsat_rules = []
+        _, group_rest = groups[0], groups[1:]
+        for rule in rules:
+            if isinstance(rule, ExistenceRule):
+                if any(rule.target_activity in group for group in group_rest):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
+                if any(rule.target_activity in group for group in group_rest):
+                    unsat_rules.append(rule)
+            elif isinstance(rule, AtMostOnceRule):
+                if any(rule.target_activity in group for group in groups):
+                    unsat_rules.append(rule)
+            elif (
+                isinstance(rule, CoExistenceRule)
+                or isinstance(rule, NotSuccessionRule)
+                or isinstance(rule, ResponseRule)
+                or isinstance(rule, NotCoExistenceRule)
+            ):
+                # In response, we have <x,y,x> obvious violation so they should appear together in the same group
+                group_a = next(
+                    (group for group in groups if rule.activity_a in group), None
+                )
+                group_b = next(
+                    (group for group in groups if rule.activity_b in group), None
+                )
+                if group_a is not None and group_b is not None and group_a != group_b:
+                    unsat_rules.append(rule)
+            elif isinstance(rule, PrecedenceRule):
+                # We have to check if b is in the do part and a is in the redo part
+                if rule.activity_b in groups[0] and any(rule.activity_a in group_rest):
+                    unsat_rules.append(rule)
+        return unsat_rules
 
     def discover(self) -> List[set]:
         # To enforce fall-throughs

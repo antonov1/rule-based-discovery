@@ -1,12 +1,14 @@
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
-import networkx as nx
+from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
+from inductive_miner.im_utils import repair_behavior
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from rules import AbstractRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
 
-def detect(log: list[list[str]], cut_order: list[type]) -> Optional[str]:
+def detect(log: List[List[str]], cut_order: List[type]) -> Optional[str]:
     if not log:
         return None
 
@@ -39,22 +41,34 @@ def project(log: list[list[str]], candidate: str) -> list[list[list[str]]]:
 
 def apply(
     im_function: Callable,
-    log: list[list[str]],
-    dfg: nx.DiGraph,
-    cut_order: list[type],
+    log: List[List[str]],
+    cut_order: List[type],
+    rules: List[AbstractRule] = None,
     **kwargs,
 ) -> Optional[ProcessTree]:
     candidate = detect(log, cut_order=cut_order)
     if candidate is None:
         return None
+    #  Rule Check
+    if rules:
+        acts = set(act for trace in log for act in trace)
+        unsat_rules = ConcurrentCut.check_rules(rules, [candidate, acts])
+        if unsat_rules:
+            return repair_behavior(log, unsat_rules, im_function, rules)
 
     # Binary split
     sublogs = project(log, candidate)
 
     parent = ProcessTree(operator=Operator.PARALLEL)
+    if rules:
+        group_0 = set(act for trace in sublogs[0] for act in trace)
+        group_1 = set(act for trace in sublogs[1] for act in trace)
+        proj_rules = ConcurrentCut.project_rules(rules, [group_0, group_1])
+        add_child(parent, im_function(sublogs[0], proj_rules[0]))
+        add_child(parent, im_function(sublogs[1], proj_rules[1]))
+    else:
+        add_child(parent, im_function(sublogs[0]))
 
-    add_child(parent, im_function(sublogs[0], ProcessTree()))
-
-    add_child(parent, im_function(sublogs[1], ProcessTree()))
+        add_child(parent, im_function(sublogs[1]))
 
     return parent

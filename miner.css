@@ -198,3 +198,14 @@ div[data-testid="stPopover"] > button {
     align-items: center;
     justify-content: center;
 }
+div[data-testid="stSegmentedControl"] button {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 75, 75, 0.2) !important;
+    color: white !important;
+    padding: 10px 20px !important;
+}
+div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+    background: linear-gradient(90deg, #ff4b4b 0%, #ff7676 100%) !important;
+    box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4) !important;
+    border: none !important;
+}

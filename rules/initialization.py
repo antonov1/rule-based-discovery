@@ -4,10 +4,13 @@ from rules.abstract_rule import AbstractRule
 
 
 class InitializationRule(AbstractRule):
+    "This rule states that the process must start with the specified activity."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 1:
             raise ValueError("InitializationRule must have exactly one activity.")
         super().__init__(activities)
+        self.name = "Init"
         self.description = (
             "This rule states that the process must start with the specified activity."
         )

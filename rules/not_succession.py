@@ -3,15 +3,17 @@ from typing import Any, List
 from rules.abstract_rule import AbstractRule
 
 
-class RespondedExistenceRule(AbstractRule):
-    "This rule states that if the first activity occurs, the second activity must also occur at least once in the trace."
+class NotSuccessionRule(AbstractRule):
+    "This rule states that the activity B does not follow the activity A."
 
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 2:
-            raise ValueError("RespondedExistenceRule must have exactly two activities.")
+            raise ValueError("NotSuccessionRule must have exactly two activities.")
         super().__init__(activities)
-        self.name = "RespondedExistence"
-        self.description = "This rule states that if the first activity occurs, the second activity must also occur at least once in the trace."
+        self.name = "NotSuccession"
+        self.description = (
+            "This rule states that the activity B does not follow the activity A."
+        )
         self.activity_a = activities[0]
         self.activity_b = activities[1]
         self.data_len = None
@@ -20,22 +22,26 @@ class RespondedExistenceRule(AbstractRule):
         self.conf = 0
 
     def __str__(self):
-        return f"RespondedExistence({', '.join(self.activities)})"
+        return f"NotSuccession({', '.join(self.activities)})"
 
     def __repr__(self):
         return self.__str__()
 
     def apply(self, data) -> List[Any]:
         valid_traces = []
-        self.data_len = len(data)
         for trace in data:
-            if self.activity_a in trace:
-                if self.activity_b in trace:
-                    valid_traces.append(trace)
+            if self.activity_a not in trace or self.activity_b not in trace:
+                valid_traces.append(trace)
             else:
-                valid_traces.append(
-                    trace
-                )  # If activity A is not present, the rule is vacuously satisfied
+                first_occurrence_a = min(
+                    [i for i in range(len(trace)) if trace[i] == self.activity_a]
+                )
+                last_occurrence_b = max(
+                    [i for i in range(len(trace)) if trace[i] == self.activity_b]
+                )
+                if first_occurrence_a > last_occurrence_b:
+                    valid_traces.append(trace)
+        self.data_len = len(data)
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
@@ -49,6 +55,4 @@ class RespondedExistenceRule(AbstractRule):
         count_a = sum(1 for trace in data if self.activity_a in trace)
         if count_a == 0:
             return 1.0  # If activity A never occurs, confidence is considered to be 1
-        count_ab = sum(1 for trace in self.apply(data) if self.activity_a in trace)
-        self.conf = count_ab / count_a
-        return self.conf
+        return self.calc_support() / count_a

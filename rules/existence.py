@@ -4,10 +4,13 @@ from rules.abstract_rule import AbstractRule
 
 
 class ExistenceRule(AbstractRule):
+    "This rule states that the specified activity must occur at least once in the process."
+
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 1:
             raise ValueError("ExistenceRule must have exactly one activity.")
         super().__init__(activities)
+        self.name = "Existence"
         self.description = "This rule states that the specified activity must occur at least once in the process."
         self.target_activity = activities[0]
         self.data_len = None
