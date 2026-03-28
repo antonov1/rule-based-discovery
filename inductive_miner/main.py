@@ -19,19 +19,7 @@ from inductive_miner.fallthroughs import (
 )
 from inductive_miner.im_utils import add_child, base_cases, repair_behavior
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import (
-    AbstractRule,
-    AtMostOnceRule,
-    CoExistenceRule,
-    EndRule,
-    ExistenceRule,
-    InitializationRule,
-    NotCoExistenceRule,
-    NotSuccessionRule,
-    PrecedenceRule,
-    RespondedExistenceRule,
-    ResponseRule,
-)
+from rules import AbstractRule, ExistenceRule, PrecedenceRule, ResponseRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
 ENABLE_PRINTS = True
@@ -93,7 +81,7 @@ def apply_IM_with_rules(
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
     empty_traces = handle_empty_traces(log, apply_IM_with_rules, rules=rules)
-    print(f"Log is: {log}")
+    # print(f"Log is: {log}")
     if empty_traces is not None:
         return empty_traces
 
@@ -196,6 +184,7 @@ def apply_IM_with_rules(
 
             res.parent = process_tree.parent
             return res
+    print("This is my last resort")
     return ProcessTree()
 
 
@@ -382,6 +371,23 @@ def apply_binary_IM(
 
 
 if __name__ == "__main__":
+    bpic = pm4py.read_xes("./inductive_miner/BPIC2012.xes")
+    bpic_log = pm4py.convert_to_dataframe(bpic)
+    rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
+    rules = [
+        ResponseRule(["A_DECLINED", "W_Completeren aanvraag"]),
+        PrecedenceRule(["A_ACCEPTED", "A_DECLINED"]),
+        ExistenceRule(["A_DECLINED"]),
+    ]
+    rules = [ExistenceRule(["O_CREATED"]), ExistenceRule(["A_FINALIZED"])]
+    model = apply_IM_with_rules(bpic_log, rules)
+    net, im, fm = pm4py.convert_to_petri_net(model)
+    print(f"Model is: {model}")
+    """
+    fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
+    prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
+    print(f"Fitness: {fitness}, precision: {prec}")
+
     examples = [
         {
             "name": "1. Enforce existence even though part of the log misses A",
@@ -593,3 +599,4 @@ if __name__ == "__main__":
         print(
             f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
         )
+    """

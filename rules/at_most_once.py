@@ -9,6 +9,9 @@ class AtMostOnceRule(AbstractRule):
     def __init__(self, activities: List[str]) -> None:
         if len(activities) != 1:
             raise ValueError("AtMostOnceRule must have exactly one activity.")
+        super().__init__(activities)
+
+        self.name = "AtMostOnce"
         self.description = "This rule states that the specified activity must occur at most once in the process."
         self.target_activity = activities[0]
         self.data_len = None

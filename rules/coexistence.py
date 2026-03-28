@@ -10,6 +10,7 @@ class CoExistenceRule(AbstractRule):
         if len(activities) != 2:
             raise ValueError("CoExistenceRule must have exactly two activities.")
         super().__init__(activities)
+        self.name = "CoExistence"
         self.description = "This rule states that the two specified activities must coexist in the same trace."
         self.activity_a = activities[0]
         self.activity_b = activities[1]

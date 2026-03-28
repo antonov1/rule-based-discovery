@@ -54,9 +54,7 @@ class LoopCut(BaseCut):
                     unsat_rules.append(rule)
             elif isinstance(rule, PrecedenceRule):
                 # We have to check if b is in the do part and a is in the redo part
-                if any(rule.activity_b in groups[0]) and any(
-                    rule.activity_a in group_rest
-                ):
+                if rule.activity_b in groups[0] and any(rule.activity_a in group_rest):
                     unsat_rules.append(rule)
         return unsat_rules
 

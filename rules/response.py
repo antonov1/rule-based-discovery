@@ -10,6 +10,7 @@ class ResponseRule(AbstractRule):
         if len(activities) != 2:
             raise ValueError("ResponseRule must have exactly two activities.")
         super().__init__(activities)
+        self.name = "Response"
         self.description = "This rule states that if the first activity occurs, the second activity must eventually follow."
         self.activity_a = activities[0]
         self.activity_b = activities[1]

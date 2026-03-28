@@ -10,6 +10,7 @@ class ExistenceRule(AbstractRule):
         if len(activities) != 1:
             raise ValueError("ExistenceRule must have exactly one activity.")
         super().__init__(activities)
+        self.name = "Existence"
         self.description = "This rule states that the specified activity must occur at least once in the process."
         self.target_activity = activities[0]
         self.data_len = None

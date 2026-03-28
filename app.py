@@ -6,6 +6,9 @@ import pm4py
 import streamlit as st
 from inductive_miner.main import apply_IM, apply_IM_with_rules
 from llm_connection.query import query_llm_for_declare_rules
+from pm4py.objects.bpmn.layout import layouter
+from pm4py.visualization.bpmn import visualizer as bpmn_visualizer
+from pm4py.visualization.petri_net import visualizer as pn_visualizer
 from pm4py.visualization.process_tree import visualizer as pt_visualizer
 from powl import import_event_log
 from promoai.general_utils.ai_providers import (
@@ -46,6 +49,8 @@ def initialization():
         st.session_state["show_skipped_message"] = False
     if "show_saved_message" not in st.session_state:
         st.session_state["show_saved_message"] = False
+    if "used_rules" not in st.session_state:
+        st.session_state["used_rules"] = []
 
 
 def setup_llm_connection():
@@ -293,6 +298,7 @@ def rule_discovery():
         h2.markdown('<div class="rule-header">Supp.</div>', unsafe_allow_html=True)
         h3.markdown('<div class="rule-header">Conf.</div>', unsafe_allow_html=True)
         h4.markdown('<div class="rule-header">Select</div>', unsafe_allow_html=True)
+        rule_by_id = {str(r): r for r in rules_to_display}
 
         for r in rules_to_display:
             r_id = str(r)
@@ -372,6 +378,11 @@ def rule_discovery():
                 st.toast(
                     "Rules locked in! Moving to Process Discovery stage.", icon="🚀"
                 )
+                st.session_state["used_rules"] = [
+                    rule_by_id[rid]
+                    for rid in st.session_state["selected_rules"]
+                    if rid in rule_by_id
+                ]
                 st.session_state["current_step"] = 3
                 st.rerun()
 
@@ -502,27 +513,71 @@ def miner_page():
         st.markdown("### 3. Process Discovery 🏗️")
         st.caption("Convert discovered rules into a visual process model.")
         model = None
-        if len(st.session_state["selected_rules"]) > 0:
+        if len(st.session_state["used_rules"]) > 0:
 
             model = apply_IM_with_rules(
                 log=preprocess_log(st.session_state["event_log"]),
-                rules=st.session_state["selected_rules"],
+                rules=st.session_state["used_rules"],
             )
         else:
             model = apply_IM(preprocess_log(st.session_state["event_log"]))
 
-        if model is not None:
-            st.markdown("### Selected rules \n")
-            st.write(st.session_state["selected_rules"])
-            parameters = {
-                pt_visualizer.Variants.WO_DECORATION.value.Parameters.FORMAT: "svg"
-            }
+        if model is None:
+            st.warning("No model discovered with current parameters")
+            return
+        st.markdown(
+            f"You have selected the following rules: {st.session_state["selected_rules"]}"
+        )
+        for rule in st.session_state["used_rules"]:
+            st.write(type(rule))
 
-            gviz = pt_visualizer.apply(model, parameters=parameters)
-            svg_str = gviz.pipe(format="svg").decode("utf-8")
-            st.image(svg_str)
-        else:
-            st.warning("No model discovered!")
+        st.write("")
+        viz_col1, viz_col2 = st.columns([2, 1])
+        with viz_col1:
+            view_mode = st.segmented_control(
+                "Select Notation:",
+                options=["Process Tree", "Petri Net", "BPMN"],
+                default="BPMN",
+                key="viz_mode_selector",
+            )
+
+        with viz_col2:
+            # Mini Stats for the model
+            st.caption("MODEL STATISTICS")
+            st.progress(0.65, text="TO DO")
+
+        # 3. CONVERSION & VISUALIZATION LOGIC
+        # We convert the Process Tree 'model' into the target notation
+        net, im, fm = pm4py.convert_to_petri_net(model)
+        gviz = None
+
+        with st.container(border=True):
+            try:
+                if view_mode == "Process Tree":
+                    parameters = {
+                        pt_visualizer.Variants.WO_DECORATION.value.Parameters.FORMAT: "svg"
+                    }
+                    gviz = pt_visualizer.apply(model, parameters=parameters)
+
+                elif view_mode == "Petri Net":
+                    gviz = pn_visualizer.apply(
+                        net, im, fm, parameters={"format": "svg"}
+                    )
+                else:  # BPMN
+                    bpmn = pm4py.convert_to_bpmn(net, im, fm)
+                    layouted_bpmn = layouter.apply(bpmn)
+                    gviz = bpmn_visualizer.apply(
+                        layouted_bpmn, parameters={"format": "svg"}
+                    )
+
+                # Render SVG to the Canvas
+                svg_str = gviz.pipe(format="svg").decode("utf-8")
+
+                # CSS for the SVG container (White background for diagram clarity)
+                st.image(svg_str)
+
+            except Exception as e:
+                st.error(f"Visualization Error: {str(e)}")
 
     st.divider()
 

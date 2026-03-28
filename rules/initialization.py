@@ -10,6 +10,7 @@ class InitializationRule(AbstractRule):
         if len(activities) != 1:
             raise ValueError("InitializationRule must have exactly one activity.")
         super().__init__(activities)
+        self.name = "Init"
         self.description = (
             "This rule states that the process must start with the specified activity."
         )

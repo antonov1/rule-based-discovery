@@ -114,7 +114,7 @@ def repair_behavior(
         sublog = rule.apply(log)
         sat_traces[i] = sublog
     intersection = intersection_of_logs(sat_traces)
-    print(f"Original log was: {log}, repaired log is: {intersection}")
+    # print(f"Original log was: {log}, repaired log is: {intersection}")
     if len(intersection) == len(log):
         # No progress, continue trying
         return None

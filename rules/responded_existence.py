@@ -10,6 +10,7 @@ class RespondedExistenceRule(AbstractRule):
         if len(activities) != 2:
             raise ValueError("RespondedExistenceRule must have exactly two activities.")
         super().__init__(activities)
+        self.name = "RespondedExistence"
         self.description = "This rule states that if the first activity occurs, the second activity must also occur at least once in the trace."
         self.activity_a = activities[0]
         self.activity_b = activities[1]

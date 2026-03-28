@@ -10,6 +10,7 @@ class NotSuccessionRule(AbstractRule):
         if len(activities) != 2:
             raise ValueError("NotSuccessionRule must have exactly two activities.")
         super().__init__(activities)
+        self.name = "NotSuccession"
         self.description = (
             "This rule states that the activity B does not follow the activity A."
         )
