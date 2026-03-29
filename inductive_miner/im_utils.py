@@ -5,6 +5,28 @@ from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
 
+def acts_of(log):
+    return {e for trace in log for e in trace}
+
+
+def assert_rules_supported(where: str, log, rules):
+    acts = acts_of(log)
+    bad = []
+
+    for r in rules or []:
+        if hasattr(r, "target_activity"):
+            if r.target_activity not in acts:
+                bad.append((str(r), acts))
+        elif hasattr(r, "activity_a") and hasattr(r, "activity_b"):
+            if r.activity_a not in acts or r.activity_b not in acts:
+                bad.append((str(r), acts))
+
+    if bad:
+        raise Exception(
+            f"[{where}] unsupported rules: {bad} for acts={acts} and log_head={log[:5]}"
+        )
+
+
 def add_child(parent, child):
     child.parent = parent
     parent.children.append(child)
@@ -102,6 +124,24 @@ def _build_loop_tree(do_first=None, redo=None) -> ProcessTree:
     return root
 
 
+def supported_rules(log, rules):
+    if not rules:
+        return []
+
+    acts = {a for trace in log for a in trace}
+    filtered = []
+
+    for rule in rules:
+        if hasattr(rule, "target_activity"):
+            if rule.target_activity in acts:
+                filtered.append(rule)
+        elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
+            if rule.activity_a in acts and rule.activity_b in acts:
+                filtered.append(rule)
+
+    return filtered
+
+
 def repair_behavior(
     log,
     unsat_rules: List[AbstractRule],
@@ -114,11 +154,13 @@ def repair_behavior(
         sublog = rule.apply(log)
         sat_traces[i] = sublog
     intersection = intersection_of_logs(sat_traces)
-    # print(f"Original log was: {log}, repaired log is: {intersection}")
-    if len(intersection) == len(log):
+    if len(intersection) == len(log) or not intersection:
         # No progress, continue trying
         return None
     if len(intersection) > 0:
-        return im_function(intersection, original_rules)
-    else:
-        return ProcessTree()  # Tau
+        new_rules = supported_rules(intersection, original_rules)
+        print(
+            f"The new rules are: {new_rules} for log with acts: {set([e for trace in intersection for e in trace])}"
+        )
+        assert_rules_supported("repair_behavior -> recurse", intersection, new_rules)
+        return im_function(intersection, new_rules)

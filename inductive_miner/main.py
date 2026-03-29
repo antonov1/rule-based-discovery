@@ -15,14 +15,21 @@ from inductive_miner.fallthroughs import (
     empty,
     flower_model,
     n_tau,
+    rule_seq,
     s_tau,
 )
-from inductive_miner.im_utils import add_child, base_cases, repair_behavior
+from inductive_miner.im_utils import (
+    add_child,
+    assert_rules_supported,
+    base_cases,
+    intersection_of_logs,
+    repair_behavior,
+)
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule, ExistenceRule, PrecedenceRule, ResponseRule
+from rules import AbstractRule, ExistenceRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
@@ -70,7 +77,18 @@ def apply_IM_with_rules(
     if isinstance(log, pd.DataFrame):
         # transform it to a list of traces
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
+    # Check if the support of rule combos is bigger than 0, if not, raise Exception
+    act_in_log = set([e for trace in log for e in trace])
+    if rules:
+        intersection_logs = [r.apply(log) for r in rules]
+        intersection_logs = intersection_of_logs(intersection_logs)
+        if len(intersection_logs) == 0:
+            act_in_log = set([e for trace in log for e in trace])
+            # export the log
 
+            raise Exception(
+                f"The support of the rules {rules} is 0. Activities are {act_in_log}."
+            )
     process_tree = ProcessTree()
 
     dfg = DirectlyFollowsGraph(log)
@@ -104,14 +122,16 @@ def apply_IM_with_rules(
             if ENABLE_PRINTS:
                 print(f"Groups are: {groups}")
             unsat_rules = cut.check_rules(rules, groups)
-            if ENABLE_PRINTS:
-                print(
-                    f"Unsat rules for {op} with groups {groups}: {[str(r) for r in unsat_rules]}"
-                )
             if unsat_rules:
+
                 repaired_log = repair_behavior(
                     log, unsat_rules, apply_IM_with_rules, rules
                 )
+                if ENABLE_PRINTS:
+                    print(
+                        f"Unsat rules for {op} with groups {groups}: {[str(r) for r in unsat_rules]}, Repaired via: {repaired_log}"
+                    )
+
                 if repaired_log:
                     return repaired_log
                 else:
@@ -123,6 +143,10 @@ def apply_IM_with_rules(
             )
             projected_rules = cut.project_rules(rules, groups)
             for i in range(len(sublogs)):
+                assert_rules_supported(
+                    "In rule refinement:", sublogs[i], projected_rules[i]
+                )
+
                 child_node = apply_IM_with_rules(
                     sublogs[i],
                     projected_rules[i],
@@ -162,8 +186,17 @@ def apply_IM_with_rules(
         s_tau,
         n_tau,
         flower_model,
+        rule_seq,
     ]
-    name_of_fall_throughs = ["empty", "once", "concur", "s_tau", "tau", "flower"]
+    name_of_fall_throughs = [
+        "empty",
+        "once",
+        "concur",
+        "s_tau",
+        "tau",
+        "flower",
+        "rseq",
+    ]
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
         res = fallthrough(
@@ -178,13 +211,12 @@ def apply_IM_with_rules(
         if res:
             if ENABLE_PRINTS:
                 print("---")
-                print("ACTS:", sorted(log_act_set))
+                print("result", res)
                 print("FALLTHROUGH:", name_of_fall_throughs[idx])
                 print("---")
 
             res.parent = process_tree.parent
             return res
-    print("This is my last resort")
     return ProcessTree()
 
 
@@ -371,23 +403,30 @@ def apply_binary_IM(
 
 
 if __name__ == "__main__":
+
     bpic = pm4py.read_xes("./inductive_miner/BPIC2012.xes")
     bpic_log = pm4py.convert_to_dataframe(bpic)
     rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
+    """
     rules = [
         ResponseRule(["A_DECLINED", "W_Completeren aanvraag"]),
         PrecedenceRule(["A_ACCEPTED", "A_DECLINED"]),
         ExistenceRule(["A_DECLINED"]),
     ]
-    rules = [ExistenceRule(["O_CREATED"]), ExistenceRule(["A_FINALIZED"])]
+    """
+    # rules = [ExistenceRule(["A_FINALIZED"])]
+
     model = apply_IM_with_rules(bpic_log, rules)
     net, im, fm = pm4py.convert_to_petri_net(model)
     print(f"Model is: {model}")
-    """
+    gviz = pm4py.visualization.process_tree.visualizer.apply(model)
+    pm4py.visualization.process_tree.visualizer.view(gviz)
+
     fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
     prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
-    print(f"Fitness: {fitness}, precision: {prec}")
 
+    print(f"Fitness: {fitness}, precision: {prec}")
+    """
     examples = [
         {
             "name": "1. Enforce existence even though part of the log misses A",
@@ -599,4 +638,4 @@ if __name__ == "__main__":
         print(
             f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
         )
-    """
+        """

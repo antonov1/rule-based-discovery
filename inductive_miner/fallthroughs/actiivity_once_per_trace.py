@@ -3,19 +3,41 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_behavior
+from inductive_miner.im_utils import assert_rules_supported, repair_behavior
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule
+from rules import AbstractRule, ExistenceRule
 
 
-def detect(log: List[List[str]], rules: List[AbstractRule]):
+def detect_based_on_rules(log: List[List[str]], rules: List[AbstractRule]):
+    alphabet = set([e for trace in log for e in trace])
+    candidates = []
+    for r in rules:
+        if isinstance(r, ExistenceRule):
+            candidates.append(r.target_activity)
+    candidates = sorted(set(candidates))
+    for c in candidates:
+        unsat_rules = ConcurrentCut.check_rules(rules, [{c}, alphabet - {c}])
+        if not unsat_rules:
+            return c
+    return None
 
+
+def detect(log: List[List[str]], rules: List[AbstractRule] = None):
     candidate_activities = set(log[0])
     for trace in log:
         for act in list(candidate_activities):
             if trace.count(act) != 1:
                 candidate_activities.remove(act)
     candidates = sorted(list(candidate_activities))
+    if rules:
+        alphabet = set([e for trace in log for e in trace])
+
+        for c in candidates:
+            unsat_rules = ConcurrentCut.check_rules(rules, [{c}, alphabet - {c}])
+            if not unsat_rules:
+                return c
+        return detect_based_on_rules(log, rules)
+
     return candidates[0] if len(candidates) else None
 
 
@@ -38,9 +60,8 @@ def apply(
     acts = list(dfg.nodes)
 
     if rules:
-        acts = set(act for trace in log for act in trace)
-        acts = acts - {candidate}
-        unsat_rules = ConcurrentCut.check_rules(rules, [candidate, acts])
+        acts = {act for trace in log for act in trace} - {candidate}
+        unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
             return repair_behavior(log, unsat_rules, im_function, rules)
 
@@ -48,7 +69,8 @@ def apply(
     parent = ProcessTree(operator=Operator.PARALLEL)
     proj_rules = (
         ConcurrentCut.project_rules(
-            rules, [candidate, set(act for trace in log for act in trace) - {candidate}]
+            rules,
+            [{candidate}, {act for trace in log for act in trace} - {candidate}],
         )[1]
         if rules
         else None
@@ -56,6 +78,7 @@ def apply(
     add_child(parent=parent, child=ProcessTree(label=candidate))
     # Get rid of candidates
     projected_log = project(log, candidate=candidate)
+    assert_rules_supported("In ONCE:", projected_log, proj_rules)
     add_child(
         parent=parent,
         child=(
