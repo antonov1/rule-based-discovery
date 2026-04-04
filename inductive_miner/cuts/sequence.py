@@ -61,7 +61,7 @@ class SequenceCut(BaseCut):
                 if (
                     group_a_idx is not None
                     and group_b_idx is not None
-                    and group_a_idx >= group_b_idx
+                    and group_a_idx > group_b_idx
                 ):
                     unsat_rules.append(rule)
             elif isinstance(rule, NotSuccessionRule):
@@ -139,6 +139,43 @@ class SequenceCut(BaseCut):
             )
         )
         return groups if len(groups) > 1 else None
+
+    def relaxed_projection(
+        self, log, groups, activity_key="concept:name", case_key="case:concept:name"
+    ):
+        sublogs = [[] for _ in groups]
+
+        for trace in log:
+            split_point = 0
+            act_union = set()
+
+            for idx, group in enumerate(groups):
+                new_split_point = self.find_split_point(
+                    trace, group, split_point, act_union
+                )
+
+                subtrace = []
+                j = split_point
+                while j < new_split_point:
+                    if trace[j] in group:
+                        subtrace.append(trace[j])
+                    j += 1
+
+                # if group occurs later but current projection is empty, include first occurrence
+                if not subtrace:
+                    k = split_point
+                    while k < len(trace):
+                        if trace[k] in group:
+                            new_split_point = k + 1
+                            subtrace = [trace[k]]
+                            break
+                        k += 1
+
+                sublogs[idx].append(subtrace)
+                split_point = new_split_point
+                act_union |= group
+
+        return sublogs
 
     def project(
         self, log, groups, activity_key="concept:name", case_key="case:concept:name"

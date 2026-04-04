@@ -222,36 +222,43 @@ def rule_discovery():
             len(st.session_state["discovered_rules"]) == 0 or strategy != "From Data"
         )
         with action_col1:
-            with st.popover(
-                "🔍 Filter Discovery Results",
-                use_container_width=True,
-                disabled=disabled,
-            ):
-                # We use 'key' to link these widgets to the session state accessed in Step 2
-                st.multiselect(
-                    "Activities",
-                    options=activities,
-                    default=activities,
-                    key="activity_filter",
-                    on_change=reset_selection_on_filter,
-                )
-                st.multiselect(
-                    "Rule Types",
-                    options=rule_types,
-                    default=rule_types,
-                    key="rule_type_filter",
-                    on_change=reset_selection_on_filter,
-                )
-
-                if st.button(
-                    "Clear All Filters", use_container_width=True, disabled=disabled
+            if strategy == "From Data":
+                with st.popover(
+                    "🔍 Filter Discovery Results",
+                    use_container_width=True,
+                    disabled=disabled,
                 ):
-                    # Reset the keys in session state specifically
-                    st.session_state["activity_filter"] = activities
-                    st.session_state["rule_type_filter"] = rule_types
-                    st.session_state["selected_rules"] = set()
-                    st.rerun()
+                    # We use 'key' to link these widgets to the session state accessed in Step 2
+                    st.multiselect(
+                        "Activities",
+                        options=activities,
+                        default=activities,
+                        key="activity_filter",
+                        on_change=reset_selection_on_filter,
+                    )
+                    st.multiselect(
+                        "Rule Types",
+                        options=rule_types,
+                        default=rule_types,
+                        key="rule_type_filter",
+                        on_change=reset_selection_on_filter,
+                    )
 
+                    if st.button(
+                        "Clear All Filters", use_container_width=True, disabled=disabled
+                    ):
+                        # Reset the keys in session state specifically
+                        st.session_state["activity_filter"] = activities
+                        st.session_state["rule_type_filter"] = rule_types
+                        st.session_state["selected_rules"] = set()
+                        st.rerun()
+            else:
+                st.button(
+                    "🔍 Filter Discovery Results",
+                    use_container_width=True,
+                    disabled=True,
+                    help="Filtering is only available for rules mined from data.",
+                )
         with action_col2:
             with st.popover("🛠️ Selection Tools", use_container_width=True):
                 st.markdown("##### Bulk Actions")
@@ -525,14 +532,12 @@ def miner_page():
         if model is None:
             st.warning("No model discovered with current parameters")
             return
-        st.markdown(
-            f"You have selected the following rules: {st.session_state["selected_rules"]}"
-        )
-        for rule in st.session_state["used_rules"]:
-            st.write(type(rule))
-
-        st.write("")
+        with st.expander("Show selected rules"):
+            for rule in st.session_state["selected_rules"]:
+                st.markdown(f"- {rule}")
+                st.write("")
         viz_col1, viz_col2 = st.columns([2, 1])
+
         with viz_col1:
             view_mode = st.segmented_control(
                 "Select Notation:",

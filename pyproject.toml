@@ -11,7 +11,7 @@ dependencies = [
     "networkx>=3.6.1",
     "pandas>=1.4.0",
     "pm4py>=2.7.19.8",
-    "promoai>=2.0.1",
+    "promoai==2.1.2",
     "pytest>=9.0.2",
     "rustxes>=0.2.11",
     "streamlit==1.55.0",
