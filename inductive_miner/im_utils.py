@@ -163,4 +163,5 @@ def repair_behavior(
             f"The new rules are: {new_rules} for log with acts: {set([e for trace in intersection for e in trace])}"
         )
         assert_rules_supported("repair_behavior -> recurse", intersection, new_rules)
+        print(f"Original Log was: {log}, new is: {intersection}")
         return im_function(intersection, new_rules)

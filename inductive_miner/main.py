@@ -26,10 +26,10 @@ from inductive_miner.im_utils import (
     repair_behavior,
 )
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule, ExistenceRule
+from rules import *
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
@@ -77,8 +77,10 @@ def apply_IM_with_rules(
     if isinstance(log, pd.DataFrame):
         # transform it to a list of traces
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
+
     # Check if the support of rule combos is bigger than 0, if not, raise Exception
     act_in_log = set([e for trace in log for e in trace])
+
     if rules:
         intersection_logs = [r.apply(log) for r in rules]
         intersection_logs = intersection_of_logs(intersection_logs)
@@ -211,8 +213,9 @@ def apply_IM_with_rules(
         if res:
             if ENABLE_PRINTS:
                 print("---")
+                print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
                 print("result", res)
-                print("FALLTHROUGH:", name_of_fall_throughs[idx])
+
                 print("---")
 
             res.parent = process_tree.parent
@@ -403,29 +406,37 @@ def apply_binary_IM(
 
 
 if __name__ == "__main__":
+    """
+    example_log = [['B', 'A', 'B', 'A', 'B'], ['B']]
+    org = apply_IM(example_log)
+    print(f"ORG: {org}")
 
-    bpic = pm4py.read_xes("./inductive_miner/BPIC2012.xes")
+    rules = [ExistenceRule(['A'])]
+    print(apply_IM_with_rules(example_log, rules=rules))
+
+    bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
     bpic_log = pm4py.convert_to_dataframe(bpic)
     rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
-    """
+
     rules = [
         ResponseRule(["A_DECLINED", "W_Completeren aanvraag"]),
         PrecedenceRule(["A_ACCEPTED", "A_DECLINED"]),
         ExistenceRule(["A_DECLINED"]),
     ]
-    """
-    # rules = [ExistenceRule(["A_FINALIZED"])]
 
+    # rules = [ExistenceRule(["A_FINALIZED"])]
+    # rules = [AtMostOnceRule(["O_Create Offer"]), PrecedenceRule(["O_Accepted", "A_Pending"])]
+    rules = [NotSuccessionRule(["O_Create Offer", "W_Call after offers"])]
     model = apply_IM_with_rules(bpic_log, rules)
     net, im, fm = pm4py.convert_to_petri_net(model)
     print(f"Model is: {model}")
-    gviz = pm4py.visualization.process_tree.visualizer.apply(model)
-    pm4py.visualization.process_tree.visualizer.view(gviz)
+    gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
+    pm4py.visualization.petri_net.visualizer.view(gviz)
 
     fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
+    print(f"Fitness: {fitness}")
     prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
-
-    print(f"Fitness: {fitness}, precision: {prec}")
+    print(f"Prec: {prec}")
     """
     examples = [
         {
@@ -626,6 +637,7 @@ if __name__ == "__main__":
             ),
         },
     ]
+    examples = examples[10:]
     for ex in examples:
         print(f"\n--- {ex['name']} ---")
         print("Log:", ex["log"])
@@ -638,4 +650,3 @@ if __name__ == "__main__":
         print(
             f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
         )
-        """

@@ -39,7 +39,7 @@ def generate_result_with_error_handling(
     api_key: str,
     llm_name: str,
     ai_provider: str,
-    llm_args: Optional[dict] = None,
+    llm_args: Optional[dict] = {},
     max_iterations=5,
     additional_iterations=5,
     standard_error_message=ERROR_MESSAGE_FOR_MODEL_GENERATION,

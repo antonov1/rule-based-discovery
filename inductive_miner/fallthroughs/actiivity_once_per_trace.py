@@ -3,7 +3,6 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import assert_rules_supported, repair_behavior
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule, ExistenceRule
 
@@ -42,9 +41,11 @@ def detect(log: List[List[str]], rules: List[AbstractRule] = None):
 
 
 def project(log: List[List[str]], candidate: str) -> List[List[str]]:
+
     new_log = [[e for e in trace if e != candidate] for trace in log]
     new_log = [trace for trace in new_log if len(trace)]
-    return new_log
+    remaining_log = [[e for e in trace if e == candidate] for trace in log]
+    return remaining_log, new_log
 
 
 def apply(
@@ -63,7 +64,7 @@ def apply(
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
-            return repair_behavior(log, unsat_rules, im_function, rules)
+            return None
 
     # Concurrent Cut (Parallel)
     parent = ProcessTree(operator=Operator.PARALLEL)
@@ -71,20 +72,29 @@ def apply(
         ConcurrentCut.project_rules(
             rules,
             [{candidate}, {act for trace in log for act in trace} - {candidate}],
-        )[1]
+        )
         if rules
         else None
     )
-    add_child(parent=parent, child=ProcessTree(label=candidate))
     # Get rid of candidates
-    projected_log = project(log, candidate=candidate)
-    assert_rules_supported("In ONCE:", projected_log, proj_rules)
+    projected_logs = project(log, candidate=candidate)
+    print(projected_logs)
+    print(proj_rules)
+
     add_child(
         parent=parent,
         child=(
-            im_function(projected_log, proj_rules)
+            im_function(projected_logs[0], proj_rules[0])
             if proj_rules
-            else im_function(projected_log)
+            else im_function(projected_logs[0])
+        ),
+    )
+    add_child(
+        parent=parent,
+        child=(
+            im_function(projected_logs[1], proj_rules[1])
+            if proj_rules
+            else im_function(projected_logs[1])
         ),
     )
     return parent
