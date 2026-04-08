@@ -209,3 +209,12 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
     box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4) !important;
     border: none !important;
 }
+div[data-testid="stProgress"] > div > div > div {
+        border-radius: 999px;
+    }
+
+section[data-testid="stSidebar"] .stButton button {
+    border-radius: 10px;
+    font-weight: 500;
+    min-height: 2.5rem;
+}

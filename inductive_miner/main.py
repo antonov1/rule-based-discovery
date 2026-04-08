@@ -29,7 +29,7 @@ from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import *
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
@@ -413,25 +413,29 @@ if __name__ == "__main__":
 
     rules = [ExistenceRule(['A'])]
     print(apply_IM_with_rules(example_log, rules=rules))
-
+    """
     bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
     bpic_log = pm4py.convert_to_dataframe(bpic)
-    rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
-
+    # rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
+    """
     rules = [
         ResponseRule(["A_DECLINED", "W_Completeren aanvraag"]),
         PrecedenceRule(["A_ACCEPTED", "A_DECLINED"]),
         ExistenceRule(["A_DECLINED"]),
     ]
-
+    """
+    rules = [
+        ExistenceRule(["A_Denied"]),
+        ResponseRule(["A_Denied", "W_Complete application"]),
+    ]
     # rules = [ExistenceRule(["A_FINALIZED"])]
     # rules = [AtMostOnceRule(["O_Create Offer"]), PrecedenceRule(["O_Accepted", "A_Pending"])]
-    rules = [NotSuccessionRule(["O_Create Offer", "W_Call after offers"])]
+    # rules = [NotSuccessionRule(["O_Create Offer", "W_Call after offers"])]
     model = apply_IM_with_rules(bpic_log, rules)
     net, im, fm = pm4py.convert_to_petri_net(model)
     print(f"Model is: {model}")
-    gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
-    pm4py.visualization.petri_net.visualizer.view(gviz)
+    # gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
+    # pm4py.visualization.petri_net.visualizer.view(gviz)
 
     fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
     print(f"Fitness: {fitness}")
@@ -650,3 +654,4 @@ if __name__ == "__main__":
         print(
             f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
         )
+    """
