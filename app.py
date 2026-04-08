@@ -24,6 +24,37 @@ STRATEGY_OPTIONS = {"From Data": "DATA", "From Text": "TEXT"}
 TEMP_FOLDER = "/tmp/rim_uploads"
 
 
+def render_sidebar_progress():
+    current = st.session_state["current_step"]
+
+    steps = [
+        "Connection Setup",
+        "Data Upload",
+        "Rule Mining",
+        "Process Discovery",
+    ]
+
+    total_steps = len(steps)
+
+    st.markdown("### 🧭 Progress")
+
+    st.markdown(f"**Step {current + 1} of {total_steps}**")
+    st.caption(steps[current])
+
+    st.progress((current + 1) / total_steps)
+
+    st.divider()
+
+    if current > 0:
+        if st.button("⬅ Back", use_container_width=True):
+            st.session_state["current_step"] -= 1
+            st.rerun()
+
+    if st.button("Restart Session", type="secondary", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+
+
 def inject_css():
     with open("miner.css", "r") as f:
         css = f.read()
@@ -228,7 +259,7 @@ def rule_discovery():
                     use_container_width=True,
                     disabled=disabled,
                 ):
-                    # We use 'key' to link these widgets to the session state accessed in Step 2
+                    # We use key to link all rules to the session state accessed in Step 2
                     st.multiselect(
                         "Activities",
                         options=activities,
@@ -266,7 +297,6 @@ def rule_discovery():
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    # NOW filtered_rules IS DEFINED AND ACCESSIBLE!
                     if st.button("Select All", use_container_width=True):
                         bulk_action("SELECT_ALL", filtered_rules)
 
@@ -469,25 +499,21 @@ def miner_page():
 
     with st.sidebar:
         st.markdown("### ⚒️ Process Discovery")
-        st.caption("No clue how to name it yet...")
         st.divider()
+        render_sidebar_progress()
+
         if st.session_state.pop("show_saved_message", False):
             st.balloons()
             st.success("Credentials Provided")
             st.markdown(
                 f"**Provider:** {st.session_state['provider']}  \n**Model:** {st.session_state['model_name']}"
             )
-        if st.session_state["show_skipped_message"] == True:
-            st.warning("No Credentials Provided.")
 
         if st.session_state.get("setup_done"):
             st.success("Credentials Provided")
             st.markdown(
                 f"**Provider:** {st.session_state['provider']}  \n**Model:** {st.session_state['model_name']}"
             )
-        if st.button("Restart Session", type="secondary"):
-            st.session_state.clear()
-            st.rerun()
 
     if st.session_state["current_step"] == 0:
         st.markdown(
@@ -551,8 +577,6 @@ def miner_page():
             st.caption("MODEL STATISTICS")
             st.progress(0.65, text="TO DO")
 
-        # 3. CONVERSION & VISUALIZATION LOGIC
-        # We convert the Process Tree 'model' into the target notation
         net, im, fm = pm4py.convert_to_petri_net(model)
         gviz = None
 
@@ -575,10 +599,8 @@ def miner_page():
                         layouted_bpmn, parameters={"format": "svg"}
                     )
 
-                # Render SVG to the Canvas
                 svg_str = gviz.pipe(format="svg").decode("utf-8")
 
-                # CSS for the SVG container (White background for diagram clarity)
                 st.image(svg_str)
 
             except Exception as e:
