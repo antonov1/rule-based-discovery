@@ -27,9 +27,59 @@ def assert_rules_supported(where: str, log, rules):
         )
 
 
+def normalize_tree(node):
+    if node is None:
+        return None
+
+    if not getattr(node, "children", None):
+        return node
+
+    associative_ops = {
+        Operator.SEQUENCE,
+        Operator.XOR,
+        Operator.PARALLEL,
+    }
+
+    new_children = []
+    for child in node.children:
+        child = normalize_tree(child)
+        if child is None:
+            continue
+
+        if node.operator in associative_ops and child.operator == node.operator:
+            for grandchild in child.children:
+                grandchild.parent = node
+                new_children.append(grandchild)
+        else:
+            child.parent = node
+            new_children.append(child)
+
+    node.children = new_children
+
+    return node
+
+
 def add_child(parent, child):
-    child.parent = parent
-    parent.children.append(child)
+    if child is None:
+        return
+
+    associative_ops = {
+        Operator.SEQUENCE,
+        Operator.XOR,
+        Operator.PARALLEL,
+    }
+
+    if (
+        parent is not None
+        and parent.operator in associative_ops
+        and child.operator == parent.operator
+    ):
+        for grandchild in child.children:
+            grandchild.parent = parent
+            parent.children.append(grandchild)
+    else:
+        child.parent = parent
+        parent.children.append(child)
 
 
 def intersection_of_logs(logs: List[List[str]]) -> List[str]:
@@ -164,4 +214,4 @@ def repair_behavior(
         # )
         assert_rules_supported("repair_behavior -> recurse", intersection, new_rules)
         # print(f"Original Log was: {log}, new is: {intersection}")
-        return im_function(intersection, new_rules)
+        return normalize_tree(im_function(intersection, new_rules))

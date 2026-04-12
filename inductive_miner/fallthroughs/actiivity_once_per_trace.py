@@ -78,8 +78,6 @@ def apply(
     )
     # Get rid of candidates
     projected_logs = project(log, candidate=candidate)
-    print(projected_logs)
-    print(proj_rules)
 
     add_child(
         parent=parent,
