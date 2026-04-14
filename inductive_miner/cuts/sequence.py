@@ -10,6 +10,8 @@ from inductive_miner.cuts.cut_utils import (
 )
 from rules import (
     AbstractRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     EndRule,
     InitializationRule,
     NotCoExistenceRule,
@@ -49,7 +51,12 @@ class SequenceCut(BaseCut):
                     and group_a_idx != group_b_idx
                 ):
                     unsat_rules.append(rule)
-            elif isinstance(rule, PrecedenceRule) or isinstance(rule, ResponseRule):
+            elif (
+                isinstance(rule, PrecedenceRule)
+                or isinstance(rule, ChainPrecedenceRule)
+                or isinstance(rule, ResponseRule)
+                or isinstance(rule, ChainResponseRule)
+            ):
                 group_a_idx = [
                     i for i in range(len(groups)) if rule.activity_a in groups[i]
                 ]

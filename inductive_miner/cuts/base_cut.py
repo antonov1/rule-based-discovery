@@ -3,8 +3,12 @@ from typing import Any, List, Union
 
 from rules import (
     AbstractRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     CoExistenceRule,
+    EndRule,
     ExistenceRule,
+    InitializationRule,
     PrecedenceRule,
     RespondedExistenceRule,
     ResponseRule,
@@ -56,25 +60,34 @@ class BaseCut(ABC):
                 if group_a_idx is not None and group_b_idx is not None:
                     if group_a_idx != group_b_idx:
                         # We have just eliminated a rule
-                        if isinstance(rule, ResponseRule) or isinstance(
+                        if isinstance(rule, ChainResponseRule):
+                            projected_rules[group_b_idx].append(
+                                InitializationRule(rule.activity_b)
+                            )
+                        elif isinstance(rule, ChainPrecedenceRule):
+                            projected_rules[group_a_idx].append(
+                                EndRule(rule.activity_a)
+                            )
+
+                        elif isinstance(rule, ResponseRule) or isinstance(
                             rule, RespondedExistenceRule
                         ):
                             # We need to make sure that the second rule occurs
                             # To avoid tricky situations
                             projected_rules[group_b_idx].append(
-                                ExistenceRule([rule.activity_b])
+                                ExistenceRule(rule.activity_b)
                             )
                         elif isinstance(rule, CoExistenceRule):
                             # Both should exist, otherwise, hard
                             projected_rules[group_a_idx].append(
-                                ExistenceRule([rule.activity_a])
+                                ExistenceRule(rule.activity_a)
                             )
                             projected_rules[group_b_idx].append(
-                                ExistenceRule([rule.activity_b])
+                                ExistenceRule(rule.activity_b)
                             )
                         elif isinstance(rule, PrecedenceRule):
                             projected_rules[group_a_idx].append(
-                                ExistenceRule([rule.activity_a])
+                                ExistenceRule(rule.activity_a)
                             )
                     else:
                         projected_rules[group_a_idx].append(rule)

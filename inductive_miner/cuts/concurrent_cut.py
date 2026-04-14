@@ -6,6 +6,8 @@ from inductive_miner.cuts.base_cut import BaseCut
 from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 from rules import (
     AbstractRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     EndRule,
     InitializationRule,
     NotCoExistenceRule,
@@ -31,7 +33,9 @@ class ConcurrentCut(BaseCut):
                 isinstance(rule, NotCoExistenceRule)
                 or isinstance(rule, NotSuccessionRule)
                 or isinstance(rule, PrecedenceRule)
+                or isinstance(rule, ChainPrecedenceRule)
                 or isinstance(rule, ResponseRule)
+                or isinstance(rule, ChainResponseRule)
             ):
                 group_a = next(
                     (group for group in groups if rule.activity_a in group), None
