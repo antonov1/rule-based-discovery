@@ -12,6 +12,8 @@ from promoai.model_generation.code_extraction import execute_code_and_get_variab
 from promoai.prompting.prompt_engineering import ERROR_MESSAGE_FOR_MODEL_GENERATION
 from rules import (
     AtMostOnceRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     CoExistenceRule,
     EndRule,
     ExistenceRule,
@@ -130,6 +132,8 @@ def code_extraction(code_snippet: str, activities=None):
         "Response": ResponseRule,
         "NotCoExistence": NotCoExistenceRule,
         "NotSuccession": NotSuccessionRule,
+        "ChainResponse": ChainResponseRule,
+        "ChainPrecedence": ChainPrecedenceRule,
     }
     code = match.group(1).strip()
     # remove all leading indentation from the code
@@ -169,6 +173,8 @@ def process_code(code, activities=None):
                 "Response",
                 "NotCoExistence",
                 "NotSuccession",
+                "ChainResponse",
+                "ChainPrecedence",
             ]:
                 raise ValueError(
                     f"Invalid rule type: {rule_type}. Allowed types are: AtMost1, CoExistence, End, Existence, Init, Precedence, RespondedExistence, Response, NotCoExistence."
@@ -191,8 +197,17 @@ def process_code(code, activities=None):
                 }
             )
     sanitized_code = "\n".join(
-        f"{rule['name']} = {rule['type']}({repr(rule['args'])})" for rule in rules
+        f"{rule['name']} = {rule['type']}({', '.join(repr(arg) for arg in rule['args'])})"
+        for rule in rules
     )
     names = [rule["name"] for rule in rules]
     sanitized_code += "\nresult = [" + ", ".join(names) + "]"
     return sanitized_code
+
+
+if __name__ == "__main__":
+    code = """
+    ```python
+    r1 = ChainResponse('A', 'B')
+    ```"""
+    code_extraction(code, ["A", "B"])

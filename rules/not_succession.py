@@ -6,26 +6,17 @@ from rules.abstract_rule import AbstractRule
 class NotSuccessionRule(AbstractRule):
     "This rule states that the activity B does not follow the activity A."
 
-    def __init__(self, activities: List[str]) -> None:
-        if len(activities) != 2:
-            raise ValueError("NotSuccessionRule must have exactly two activities.")
-        super().__init__(activities)
-        self.name = "NotSuccession"
+    def __init__(self, activity_a: str, activity_b: str) -> None:
+        super().__init__([activity_a, activity_b])
         self.description = (
             "This rule states that the activity B does not follow the activity A."
         )
-        self.activity_a = activities[0]
-        self.activity_b = activities[1]
+        self.activity_a = activity_a
+        self.activity_b = activity_b
         self.data_len = None
         self.valid_traces_len = None
         self.sup = 0
         self.conf = 0
-
-    def __str__(self):
-        return f"NotSuccession({', '.join(self.activities)})"
-
-    def __repr__(self):
-        return self.__str__()
 
     def apply(self, data) -> List[Any]:
         valid_traces = []
@@ -53,6 +44,14 @@ class NotSuccessionRule(AbstractRule):
 
     def calc_confidence(self, data) -> float:
         count_a = sum(1 for trace in data if self.activity_a in trace)
-        if count_a == 0:
-            return 1.0  # If activity A never occurs, confidence is considered to be 1
-        return self.calc_support() / count_a
+        count_a_not_followed_by_b = 0
+        for trace in data:
+            first_occurrence_a = min(
+                [i for i in range(len(trace)) if trace[i] == self.activity_a]
+            )
+            last_occurrence_b = max(
+                [i for i in range(len(trace)) if trace[i] == self.activity_b]
+            )
+            if last_occurrence_b < first_occurrence_a:
+                count_a_not_followed_by_b += 1
+        return count_a_not_followed_by_b / count_a
