@@ -6,24 +6,15 @@ from rules.abstract_rule import AbstractRule
 class AtMostOnceRule(AbstractRule):
     "This rule states that the specified activity must occur at most once in the process."
 
-    def __init__(self, activities: List[str]) -> None:
-        if len(activities) != 1:
-            raise ValueError("AtMostOnceRule must have exactly one activity.")
-        super().__init__(activities)
+    def __init__(self, activity: str) -> None:
+        super().__init__([activity])
 
-        self.name = "AtMostOnce"
         self.description = "This rule states that the specified activity must occur at most once in the process."
-        self.target_activity = activities[0]
+        self.target_activity = activity
         self.data_len = None
         self.valid_traces_len = None
         self.sup = 0
         self.conf = 0
-
-    def __str__(self):
-        return f"AtMost1({self.target_activity})"
-
-    def __repr__(self):
-        return self.__str__()
 
     def apply(self, data) -> List[Any]:
         self.data_len = len(data)

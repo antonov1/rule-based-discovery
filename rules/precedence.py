@@ -6,24 +6,15 @@ from rules.abstract_rule import AbstractRule
 class PrecedenceRule(AbstractRule):
     "This rule states that the second activity can only occur if the first activity has occurred before it in the trace."
 
-    def __init__(self, activities: List[str]) -> None:
-        if len(activities) != 2:
-            raise ValueError("PrecedenceRule must have exactly two activities.")
-        super().__init__(activities)
-        self.name = "Precedence"
+    def __init__(self, activity_a: str, activity_b: str) -> None:
+        super().__init__([activity_a, activity_b])
         self.description = "This rule states that the second activity can only occur if the first activity has occurred before it in the trace."
-        self.activity_a = activities[0]
-        self.activity_b = activities[1]
+        self.activity_a = activity_a
+        self.activity_b = activity_b
         self.data_len = None
         self.valid_traces_len = None
         self.sup = 0
         self.conf = 0
-
-    def __str__(self):
-        return f"Precedence({', '.join(self.activities)})"
-
-    def __repr__(self):
-        return self.__str__()
 
     def apply(self, data) -> List[Any]:
         valid_traces = []

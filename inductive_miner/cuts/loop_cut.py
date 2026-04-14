@@ -7,6 +7,8 @@ from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 from rules import (
     AbstractRule,
     AtMostOnceRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     CoExistenceRule,
     EndRule,
     ExistenceRule,
@@ -40,6 +42,7 @@ class LoopCut(BaseCut):
             elif (
                 isinstance(rule, CoExistenceRule)
                 or isinstance(rule, ResponseRule)
+                or isinstance(rule, ChainResponseRule)
                 or isinstance(rule, NotCoExistenceRule)
             ):
                 # In response, we have <x,y,x> obvious violation so they should appear together in the same group
@@ -51,7 +54,9 @@ class LoopCut(BaseCut):
                 )
                 if group_a is not None and group_b is not None and group_a != group_b:
                     unsat_rules.append(rule)
-            elif isinstance(rule, PrecedenceRule):
+            elif isinstance(rule, PrecedenceRule) or isinstance(
+                rule, ChainPrecedenceRule
+            ):
                 # We have to check if b is in the do part and a is in the redo part
                 if rule.activity_b in groups[0] and any(rule.activity_a in group_rest):
                     unsat_rules.append(rule)

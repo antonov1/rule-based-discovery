@@ -1,5 +1,7 @@
 from .abstract_rule import AbstractRule
 from .at_most_once import AtMostOnceRule
+from .chain_precedence import ChainPrecedenceRule
+from .chain_response import ChainResponseRule
 from .coexistence import CoExistenceRule
 from .end_rule import EndRule
 from .existence import ExistenceRule

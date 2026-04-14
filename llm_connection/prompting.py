@@ -43,8 +43,10 @@ def generate_declare_prompt(process_description, activities):
         "- NotCoExistence(A, B): Activities A and B cannot coexist in the same trace.\n"
         "- NotSuccession(A, B): Activity B never follows activity A in the same trace.\n"
         "- Precedence(A, B): Activity B can only occur if activity A has occurred before it.\n"
+        "- ChainPrecedence(A, B): Activity B can only occur if activity A has occurred **directly** before it.\n"
         "- RespondedExistence(A, B): If activity A occurs, activity B must also occur (anywhere in the trace).\n"
-        "- Response(A, B): If activity A occurs, activity B must eventually follow it.\n\n"
+        "- Response(A, B): If activity A occurs, activity B must eventually follow it.\n"
+        "- ChainResponse(A, B): If activity A occurs, activity B must **directly** follow it.\n\n"
         "The expected output must be a Python code snippet with the following format:\n"
         "```python\n"
         'rule1 = RuleName("ActivityA")\n'

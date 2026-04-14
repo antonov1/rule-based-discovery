@@ -6,6 +6,8 @@ from inductive_miner.cuts.base_cut import BaseCut
 from inductive_miner.cuts.cut_utils import ENABLE_EXPLICIT_EMPTY_TRACE_CHECK
 from rules import (
     AbstractRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     CoExistenceRule,
     EndRule,
     ExistenceRule,
@@ -33,8 +35,10 @@ class ExclusiveChoiceCut(BaseCut):
                     unsat_rules.append(rule)
             elif (
                 isinstance(rule, PrecedenceRule)
+                or isinstance(rule, ChainPrecedenceRule)
                 or isinstance(rule, CoExistenceRule)
                 or isinstance(rule, ResponseRule)
+                or isinstance(rule, ChainResponseRule)
                 or isinstance(rule, RespondedExistenceRule)
             ):
                 group_a = next(

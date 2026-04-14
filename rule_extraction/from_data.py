@@ -5,6 +5,8 @@ import pandas as pd
 from rules import (
     AbstractRule,
     AtMostOnceRule,
+    ChainPrecedenceRule,
+    ChainResponseRule,
     CoExistenceRule,
     EndRule,
     ExistenceRule,
@@ -60,7 +62,7 @@ def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule
     se_rules = check_start_end(log, min_support=min_support)
 
     for activity, _, _ in se_rules["init_rules"]:
-        rule = InitializationRule([activity])
+        rule = InitializationRule(activity)
         rule.apply(log)
         if (
             rule.calc_support() >= min_support
@@ -69,7 +71,7 @@ def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule
             extracted_rules.append(rule)
 
     for activity, _, _ in se_rules["end_rules"]:
-        rule = EndRule([activity])
+        rule = EndRule(activity)
         rule.apply(log)
         if (
             rule.calc_support() >= min_support
@@ -83,7 +85,7 @@ def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule
 
     for act in sorted(unary_activities):
         for rule_cls in [ExistenceRule, AtMostOnceRule]:
-            rule = rule_cls([act])
+            rule = rule_cls(act)
             rule.apply(log)
             if (
                 rule.calc_support() >= min_support
@@ -99,17 +101,21 @@ def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule
         a, b = pair
 
         candidate_rules = [
-            CoExistenceRule([a, b]),
-            RespondedExistenceRule([a, b]),
-            RespondedExistenceRule([b, a]),
-            ResponseRule([a, b]),
-            ResponseRule([b, a]),
-            PrecedenceRule([a, b]),
-            PrecedenceRule([b, a]),
+            CoExistenceRule(a, b),
+            RespondedExistenceRule(a, b),
+            RespondedExistenceRule(b, a),
+            ResponseRule(a, b),
+            ResponseRule(b, a),
+            PrecedenceRule(a, b),
+            PrecedenceRule(b, a),
+            ChainResponseRule(a, b),
+            ChainResponseRule(b, a),
+            ChainPrecedenceRule(a, b),
+            ChainPrecedenceRule(b, a),
         ]
 
         for rule in candidate_rules:
-            key = (rule.__class__.__name__, tuple(rule.activities))
+            key = (rule.__class__.__name__, tuple(rule.args))
             if key in seen:
                 continue
             seen.add(key)
@@ -142,4 +148,3 @@ if __name__ == "__main__":
     for rule in rules:
         print(rule)
         print(rule.get_confidence())
-    print(rules)
