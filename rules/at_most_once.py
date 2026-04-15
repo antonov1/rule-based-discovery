@@ -24,6 +24,20 @@ class AtMostOnceRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            occurrences = [
+                i for i in range(len(trace)) if trace[i] == self.target_activity
+            ]
+            new_trace = trace
+            if len(occurrences) > 1:
+                # Remove everything apart from the first appearance
+                to_remove = set(occurrences[1:])
+                new_trace = [act for i, act in enumerate(trace) if i not in to_remove]
+            repaired.append(new_trace)
+        return repaired
+
     def calc_support(self) -> float:
 
         if not self.data_len:

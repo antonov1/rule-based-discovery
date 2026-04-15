@@ -32,6 +32,20 @@ class PrecedenceRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            new_trace = []
+            seen_a = False
+            for act in trace:
+                if act == self.activity_a:
+                    seen_a = True
+                if self.activity_b == act and not seen_a:
+                    continue
+                new_trace.append(act)
+            repaired.append(new_trace)
+        return repaired
+
     def calc_support(self) -> float:
         if not self.data_len or not self.valid_traces_len:
             return 0.0

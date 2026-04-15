@@ -30,6 +30,16 @@ class RespondedExistenceRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            new_trace = trace
+            if self.activity_a in trace and self.activity_b not in trace:
+                new_trace = [act for act in trace if act != self.activity_a]
+            repaired.append(new_trace)
+
+        return repaired
+
     def calc_support(self) -> float:
         if not self.data_len or not self.valid_traces_len:
             return 0.0

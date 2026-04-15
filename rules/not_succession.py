@@ -36,6 +36,17 @@ class NotSuccessionRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            new_trace = []
+            for idx, act in enumerate(trace):
+                if act == self.activity_a and self.activity_b in trace[idx + 1 :]:
+                    continue
+                new_trace.append(act)
+            repaired.append(new_trace)
+        return repaired
+
     def calc_support(self) -> float:
         if not self.data_len or not self.valid_traces_len:
             return 0.0

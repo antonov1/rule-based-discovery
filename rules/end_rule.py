@@ -25,6 +25,19 @@ class EndRule(AbstractRule):
         self.valid_traces_len = len(self.valid_traces)
         return self.valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            last_occurrence = (
+                max([i for i in range(len(trace)) if trace[i] == self.target_activity])
+                if self.target_activity in trace
+                else None
+            )
+            # Trim the trace to the last occurrence
+            if last_occurrence is not None:
+                repaired.append(trace[: last_occurrence + 1])
+        return repaired
+
     def calc_support(self) -> float:
         if not self.data_len or not self.valid_traces_len:
             return 0.0
