@@ -23,8 +23,7 @@ from inductive_miner.im_utils import (
     assert_rules_supported,
     base_cases,
     intersection_of_logs,
-    normalize_tree,
-    repair_behavior,
+    surgical_repair,
 )
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import *
@@ -43,7 +42,7 @@ def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
             groups = [set(), act_set]
             unsat_rules = ExclusiveChoiceCut.check_rules(rules, groups)
             if len(unsat_rules) > 0:
-                return repair_behavior(log, unsat_rules, im_function, rules)
+                return surgical_repair(log, unsat_rules, im_function, rules)
 
         if not non_empty_log:
             return ProcessTree()  # Pure Tau
@@ -126,7 +125,7 @@ def apply_BIM_with_rules(
             unsat_rules = cut.check_rules(rules, groups)
             if unsat_rules:
 
-                repaired_log = repair_behavior(
+                repaired_log = surgical_repair(
                     log, unsat_rules, apply_BIM_with_rules, rules
                 )
                 if ENABLE_PRINTS:
@@ -284,7 +283,7 @@ def apply_IM_with_rules(
             unsat_rules = cut.check_rules(rules, groups)
             if unsat_rules:
 
-                repaired_log = repair_behavior(
+                repaired_log = surgical_repair(
                     log, unsat_rules, apply_IM_with_rules, rules
                 )
                 if ENABLE_PRINTS:
@@ -569,29 +568,31 @@ if __name__ == "__main__":
     org = apply_IM(example_log)
     print(f"ORG: {org}")
 
-    rules = [ExistenceRule(['A'])]
+    rules = [ExistenceRule('A')]
     print(apply_IM_with_rules(example_log, rules=rules))
-    """
+
     bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
     bpic_log = pm4py.convert_to_dataframe(bpic)
-    # rules = [ExistenceRule(["O_CANCELLED"]), ExistenceRule(["A_APPROVED"])]
-    """
+    # rules = [ExistenceRule("O_CANCELLED"]), ExistenceRule("A_APPROVED"])]
+
     rules = [
-        ResponseRule(["A_DECLINED", "W_Completeren aanvraag"]),
-        PrecedenceRule(["A_ACCEPTED", "A_DECLINED"]),
-        ExistenceRule(["A_DECLINED"]),
+        ResponseRule("A_DECLINED", "W_Completeren aanvraag"),
+        PrecedenceRule("A_ACCEPTED", "A_DECLINED"),
+        ExistenceRule("A_DECLINED"),
     ]
-    """
+
     rules = [
-        ExistenceRule(["A_Denied"]),
-        ResponseRule(["A_Denied", "W_Complete application"]),
+        ExistenceRule("A_Denied"),
+        ResponseRule("A_Denied", "W_Complete application"),
     ]
-    # rules = [ExistenceRule(["A_FINALIZED"])]
+    # rules = [ExistenceRule("A_FINALIZED"])]
+
     rules = [
-        AtMostOnceRule(["O_Create Offer"]),
-        PrecedenceRule(["O_Accepted", "A_Pending"]),
+        AtMostOnceRule("O_Create Offer"),
+        PrecedenceRule("O_Accepted", "A_Pending"),
     ]
-    # rules = [NotSuccessionRule(["O_Create Offer", "W_Call after offers"])]
+
+    # rules = [NotSuccessionRule("O_Create Offer", "W_Call after offers"])]
     model = normalize_tree(apply_BIM_with_rules(bpic_log, rules))
     net, im, fm = pm4py.convert_to_petri_net(model)
     net, im, fm = pm4py.reduce_petri_net_implicit_places(net, im, fm)
@@ -601,12 +602,10 @@ if __name__ == "__main__":
 
     # gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
     # pm4py.visualization.petri_net.visualizer.view(gviz)
-    from pm4py.algo.discovery.inductive import algorithm as inductive_miner
 
-    model = inductive_miner.apply(bpic_log)
-    fitness = pm4py.fitness_alignments(bpic_log, net, im, fm)
+    fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
     print(f"Fitness: {fitness}")
-    prec = pm4py.precision_alignments(bpic_log, net, im, fm)
+    prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
     print(f"Prec: {prec}")
     """
     examples = [
@@ -625,13 +624,13 @@ if __name__ == "__main__":
         {
             "name": "3. Enforce not-coexistence even though A and B co-occur in the log",
             "log": [["A"], ["B"], ["A", "B"], ["A"]],
-            "rules": [NotCoExistenceRule(["A", "B"])],
+            "rules": [NotCoExistenceRule("A", "B")],
             "why": "The trace ['A', 'B'] violates the rule, but the model should separate A and B so they cannot co-exist.",
         },
         {
             "name": "4. Enforce co-existence although the log has A without B",
             "log": [["A"], ["A", "B"], ["B"], ["A", "B"]],
-            "rules": [CoExistenceRule(["A", "B"])],
+            "rules": [CoExistenceRule("A", "B")],
             "why": "The log is inconsistent, but the model should enforce that A and B always appear together.",
         },
         {
@@ -649,25 +648,25 @@ if __name__ == "__main__":
         {
             "name": "7. Enforce precedence A -> B although B appears without A",
             "log": [["B"], ["A", "B"], ["C", "A", "B"]],
-            "rules": [PrecedenceRule(["A", "B"])],
+            "rules": [PrecedenceRule("A", "B")],
             "why": "The first trace violates precedence, but the model should require A before B.",
         },
         {
             "name": "8. Enforce response A -> B although some A is not followed by B",
             "log": [["A"], ["A", "C"], ["A", "B"], ["C"]],
-            "rules": [ResponseRule(["A", "B"])],
+            "rules": [ResponseRule("A", "B")],
             "why": "Some occurrences of A are not followed by B, but the model should enforce that they are.",
         },
         {
             "name": "9. Enforce responded existence A -> B although A occurs alone",
             "log": [["A"], ["A", "B"], ["C"], ["B"]],
-            "rules": [RespondedExistenceRule(["A", "B"])],
+            "rules": [RespondedExistenceRule("A", "B")],
             "why": "A appears without B in one trace, but the model should ensure that if A occurs, B occurs too.",
         },
         {
             "name": "10. Enforce not-succession A !-> B although the log contains A then B",
             "log": [["A", "B"], ["A", "C"], ["B"]],
-            "rules": [NotSuccessionRule(["A", "B"])],
+            "rules": [NotSuccessionRule("A", "B")],
             "why": "The first trace violates the rule, but the model should disallow B after A.",
         },
         {
@@ -685,19 +684,19 @@ if __name__ == "__main__":
         {
             "name": "13. Combine precedence and response",
             "log": [["B"], ["A"], ["A", "B"], ["C", "A", "D"]],
-            "rules": [PrecedenceRule(["A", "B"]), ResponseRule(["A", "B"])],
+            "rules": [PrecedenceRule("A", "B"), ResponseRule("A", "B")],
             "why": "B should only happen after A, and every A should be followed by B, despite contradictory traces.",
         },
         {
             "name": "14. Combine not-coexistence with existence",
             "log": [["A"], ["B"], ["A", "B"], ["C"]],
-            "rules": [ExistenceRule("A"), NotCoExistenceRule(["A", "B"])],
+            "rules": [ExistenceRule("A"), NotCoExistenceRule("A", "B")],
             "why": "The model should require A but still forbid A and B from appearing together.",
         },
         {
             "name": "15. Combine co-existence with initialization",
             "log": [["A"], ["B"], ["A", "B"], ["C", "A", "B"]],
-            "rules": [InitializationRule("A"), CoExistenceRule(["A", "B"])],
+            "rules": [InitializationRule("A"), CoExistenceRule("A", "B")],
             "why": "The model should start with A and enforce that A and B always occur together.",
         },
         {
@@ -712,7 +711,7 @@ if __name__ == "__main__":
             ],
             "rules": [
                 InitializationRule("A"),
-                CoExistenceRule(["A", "B"]),
+                CoExistenceRule("A", "B"),
                 EndRule("E"),
             ],
             "why": (
@@ -733,9 +732,9 @@ if __name__ == "__main__":
             ],
             "rules": [
                 InitializationRule("A"),
-                CoExistenceRule(["A", "B"]),
+                CoExistenceRule("A", "B"),
                 AtMostOnceRule("B"),
-                NotSuccessionRule(["C", "D"]),
+                NotSuccessionRule("C", "D"),
             ],
             "why": (
                 "This one is more interesting because the rules interact: A must start, "
@@ -755,9 +754,9 @@ if __name__ == "__main__":
             ],
             "rules": [
                 InitializationRule("A"),
-                CoExistenceRule(["A", "B"]),
-                ResponseRule(["B", "D"]),
-                NotCoExistenceRule(["C", "D"]),
+                CoExistenceRule("A", "B"),
+                ResponseRule("B", "D"),
+                NotCoExistenceRule("C", "D"),
             ],
             "why": (
                 "A must be first, A and B must occur together, every B must eventually be "
@@ -777,8 +776,8 @@ if __name__ == "__main__":
             ],
             "rules": [
                 InitializationRule("A"),
-                CoExistenceRule(["A", "B"]),
-                PrecedenceRule(["B", "C"]),
+                CoExistenceRule("A", "B"),
+                PrecedenceRule("B", "C"),
                 EndRule("E"),
             ],
             "why": (
@@ -798,8 +797,8 @@ if __name__ == "__main__":
             ],
             "rules": [
                 InitializationRule("A"),
-                CoExistenceRule(["A", "B"]),
-                RespondedExistenceRule(["B", "D"]),
+                CoExistenceRule("A", "B"),
+                RespondedExistenceRule("B", "D"),
                 AtMostOnceRule("B"),
             ],
             "why": (
@@ -807,9 +806,106 @@ if __name__ == "__main__":
                 "must always occur together; A must be first; and B cannot repeat."
             ),
         },
+        {
+            "name": "21. One noisy event after the true end, with an optional middle branch",
+            "log": [
+                ["A", "B", "E"],
+                ["A", "C", "E"],
+                ["A", "B", "D", "E"],
+                ["A", "C", "D", "E"],
+                ["A", "B", "E", "X"],  # single noise event after the real end
+            ],
+            "rules": [
+                InitializationRule("A"),
+                EndRule("E"),
+            ],
+            "why": (
+                "All clean traces support a structure like A -> optional choice/variation -> E. "
+                "The last trace differs only by one extra event X after the true end E. "
+                "A surgical repair can delete that one event and preserve the optional middle behavior. "
+                "A subtrace-rejection strategy may instead treat the suffix after E as evidence for a larger "
+                "or more rigid tail, or distort the decomposition around E."
+            ),
+        },
+        {
+            "name": "22. One duplicated B inside a stable A-B-optional-tail pattern",
+            "log": [
+                ["A", "B", "C"],
+                ["A", "B", "D"],
+                ["A", "B", "C", "D"],
+                ["A", "B", "B", "C"],  # only one extra B
+                ["A", "B"],
+            ],
+            "rules": [
+                InitializationRule("A"),
+                AtMostOnceRule("B"),
+            ],
+            "why": (
+                "The clean traces all support a simple pattern where A starts, B occurs once, and then "
+                "an optional tail follows. The violating trace has exactly one extra B in the middle. "
+                "A surgical repair can remove that duplicate and keep the tail structure intact. "
+                "A rejection-based approach may overreact by introducing a stricter sequence or collapsing "
+                "the optional tail around the repeated region."
+            ),
+        },
+        {
+            "name": "23. Missing B after A in exactly one trace, while optional tail should survive",
+            "log": [
+                ["A", "B", "C"],
+                ["A", "B", "D"],
+                ["A", "B", "C", "D"],
+                ["A", "C"],  # one missing B after A
+                ["D"],
+            ],
+            "rules": [
+                ResponseRule("A", "B"),
+            ],
+            "why": (
+                "Most traces suggest that whenever A occurs, B should follow, while C and D remain optional tail behavior. "
+                "The trace ['A', 'C'] is only one missing event away from compliance. "
+                "A surgical repair can insert B and preserve the optional C tail. "
+                "A subtrace-rejection approach may instead force a smaller model like A -> B and drop "
+                "too much of the optional continuation."
+            ),
+        },
+        {
+            "name": "24. One accidental B violates not-coexistence, but the rest of the variant is useful",
+            "log": [
+                ["A", "C", "D"],
+                ["A", "D"],
+                ["B", "D"],
+                ["B", "C", "D"],
+                ["B", "A", "B", "C", "D"],
+                ["A", "B"],
+            ],
+            "rules": [
+                NotCoExistenceRule("A", "B"),
+            ],
+            "why": (
+                "The log naturally suggests two families of behavior: an A-branch and a B-branch, both sharing useful "
+                "continuation through C/D. The last trace violates not-coexistence only because of one accidental B. "
+                "A surgical repair can delete that event and preserve the A-branch with its tail. "
+                "A subtrace-rejection approach is more likely to separate A and B too aggressively and lose the shared "
+                "tail structure or collapse to a very weak fallback model."
+            ),
+        },
+        {
+            "name": "25. Precedence violated by a single misplaced B before A",
+            "log": [
+                ["A", "B", "C"],
+                ["D", "A", "B"],
+                ["B", "A", "C", "B"],  # B is too early
+                ["A", "C"],
+            ],
+            "rules": [PrecedenceRule("A", "B"), ChainResponseRule("B", "C")],
+            "why": (
+                "In ['B', 'A', 'C'], the problem is local: B occurs before A once. A surgical repair could "
+                "move B after A or delete that early B. A subtrace-rejection approach is more likely to force "
+                "a stricter decomposition that removes the optional C pattern or collapses the branch to A->B."
+            ),
+        },
     ]
-    examples = examples[10:]
-    for ex in examples:
+    for ex in examples[24:]:
         print(f"\n--- {ex['name']} ---")
         print("Log:", ex["log"])
         print("Rules:", ex["rules"])
@@ -821,4 +917,3 @@ if __name__ == "__main__":
         print(
             f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
         )
-    """

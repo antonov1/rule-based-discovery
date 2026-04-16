@@ -65,7 +65,6 @@ def apply(
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
             return None
-
     # Concurrent Cut (Parallel)
     parent = ProcessTree(operator=Operator.PARALLEL)
     proj_rules = (

@@ -16,6 +16,7 @@ from rules import (
     NotCoExistenceRule,
     NotSuccessionRule,
     PrecedenceRule,
+    RespondedExistenceRule,
     ResponseRule,
 )
 
@@ -60,6 +61,11 @@ class LoopCut(BaseCut):
                 # We have to check if b is in the do part and a is in the redo part
                 if rule.activity_b in groups[0] and any(rule.activity_a in group_rest):
                     unsat_rules.append(rule)
+            elif isinstance(rule, RespondedExistenceRule):
+                # We have to check if b is in the do part and a is in the redo part
+                if rule.activity_a in groups[0] and any(rule.activity_b in group_rest):
+                    unsat_rules.append(rule)
+
             elif isinstance(rule, NotSuccessionRule):
                 # regardless what you do, that's gonna be unsatisfied
                 unsat_rules.append(rule)

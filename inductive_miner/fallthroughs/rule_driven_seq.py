@@ -7,7 +7,7 @@ from inductive_miner.fallthroughs.fallthrough_utils import (
     ARTIFICIAL_START,
     build_cdg,
 )
-from inductive_miner.im_utils import repair_behavior
+from inductive_miner.im_utils import surgical_repair
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -47,7 +47,7 @@ def apply(
 
     violations = SequenceCut.check_rules(rules or [], groups)
     if violations:
-        repaired = repair_behavior(log, violations, im_function, rules or [])
+        repaired = surgical_repair(log, violations, im_function, rules or [])
         if repaired is not None:
             return repaired
         return None

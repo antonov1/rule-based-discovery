@@ -3,7 +3,7 @@ from typing import Callable, List, Optional
 import networkx as nx
 from inductive_miner.cuts import LoopCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import assert_rules_supported, repair_behavior
+from inductive_miner.im_utils import assert_rules_supported, surgical_repair
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -50,7 +50,7 @@ def apply(
         acts = {act for trace in log for act in trace}
         unsat_rules = LoopCut.check_rules(rules, [set(), acts])
         if unsat_rules:
-            return repair_behavior(log, unsat_rules, im_function, rules)
+            return surgical_repair(log, unsat_rules, im_function, rules)
 
     parent = ProcessTree(operator=Operator.LOOP)
     proj_rules = (

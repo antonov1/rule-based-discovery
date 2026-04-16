@@ -3,7 +3,7 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ExclusiveChoiceCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_behavior
+from inductive_miner.im_utils import surgical_repair
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -35,7 +35,7 @@ def apply(
         acts = set(act for trace in log for act in trace)
         unsat_rules = ExclusiveChoiceCut.check_rules(rules, [set(), acts])
         if unsat_rules:
-            return repair_behavior(log, unsat_rules, im_function, rules)
+            return surgical_repair(log, unsat_rules, im_function, rules)
     parent = ProcessTree(operator=Operator.XOR)
     tau_child = ProcessTree()
     add_child(parent=parent, child=tau_child)
