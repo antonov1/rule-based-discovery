@@ -51,5 +51,7 @@ class CoExistenceRule(AbstractRule):
         # A u B
         activated = count_a + count_b - count_ab
         if activated == 0:
+            self.conf = 1
             return 1
+        self.conf = count_ab / activated
         return count_ab / activated

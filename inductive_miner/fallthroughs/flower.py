@@ -1,6 +1,6 @@
 from inductive_miner.cuts import LoopCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import surgical_repair
+from inductive_miner.im_utils import repair_mechanism
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 
 
@@ -13,7 +13,7 @@ def apply(im_function, log, rules=None, **kwargs) -> ProcessTree:
     if rules:
         unsat_rules = LoopCut.check_rules(rules, groups)
         if unsat_rules:
-            return surgical_repair(log, unsat_rules, im_function, rules)
+            return repair_mechanism(log, unsat_rules, im_function, rules)
 
     parent = ProcessTree(operator=Operator.LOOP)
     do_child = ProcessTree()

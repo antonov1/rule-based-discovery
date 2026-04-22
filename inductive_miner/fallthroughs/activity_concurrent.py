@@ -2,7 +2,7 @@ from typing import Callable, List, Optional
 
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import assert_rules_supported, surgical_repair
+from inductive_miner.im_utils import assert_rules_supported, repair_mechanism
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
@@ -61,7 +61,7 @@ def apply(
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
-            repaired = surgical_repair(log, unsat_rules, im_function, rules)
+            repaired = repair_mechanism(log, unsat_rules, im_function, rules)
             if repaired:
                 return repaired
             else:

@@ -55,14 +55,24 @@ class NotSuccessionRule(AbstractRule):
 
     def calc_confidence(self, data) -> float:
         count_a = sum(1 for trace in data if self.activity_a in trace)
+        if count_a == 0:
+            self.conf = 0
+            return 0
+
         count_a_not_followed_by_b = 0
         for trace in data:
+            if self.activity_a not in trace:
+                continue
             first_occurrence_a = min(
-                [i for i in range(len(trace)) if trace[i] == self.activity_a]
+                i for i, activity in enumerate(trace) if activity == self.activity_a
             )
+            if self.activity_b not in trace:
+                count_a_not_followed_by_b += 1
+                continue
             last_occurrence_b = max(
-                [i for i in range(len(trace)) if trace[i] == self.activity_b]
+                i for i, activity in enumerate(trace) if activity == self.activity_b
             )
             if last_occurrence_b < first_occurrence_a:
                 count_a_not_followed_by_b += 1
-        return count_a_not_followed_by_b / count_a
+        self.conf = count_a_not_followed_by_b / count_a
+        return self.conf

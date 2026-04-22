@@ -218,3 +218,36 @@ section[data-testid="stSidebar"] .stButton button {
     font-weight: 500;
     min-height: 2.5rem;
 }
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(120, 120, 140, 0.25);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.metric-label {
+    font-size: 0.78rem;
+    opacity: 0.68;
+    margin-bottom: 0.35rem;
+}
+
+.metric-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: normal;
+}
+
+@media (max-width: 800px) {
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+}
