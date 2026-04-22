@@ -305,7 +305,7 @@ if __name__ == "__main__":
         print("Rules:", ex["rules"])
         print("Why:", ex["why"])
         model_constrainted = apply_IM_with_rules(ex["log"], ex["rules"])
-        model_im = apply_IM(ex["log"])
+        model_im = normalize_tree(apply_IM(ex["log"]))
         print(f"IM (no constraints): {model_im}")
         print(f"RIM: {model_constrainted}")
         print(

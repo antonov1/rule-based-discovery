@@ -61,10 +61,16 @@ class BaseCut(ABC):
                     if group_a_idx != group_b_idx:
                         # We have just eliminated a rule
                         if isinstance(rule, ChainResponseRule):
+                            projected_rules[group_a_idx].append(
+                                EndRule(rule.activity_a)
+                            )
                             projected_rules[group_b_idx].append(
                                 InitializationRule(rule.activity_b)
                             )
                         elif isinstance(rule, ChainPrecedenceRule):
+                            projected_rules[group_b_idx].append(
+                                InitializationRule(rule.activity_b)
+                            )
                             projected_rules[group_a_idx].append(
                                 EndRule(rule.activity_a)
                             )

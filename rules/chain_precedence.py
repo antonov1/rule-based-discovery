@@ -49,3 +49,10 @@ class ChainPrecedenceRule(PrecedenceRule):
             repaired.append(new_trace)
 
         return repaired
+
+
+if __name__ == "__main__":
+    rule = ChainPrecedenceRule("A", "B")
+    log = [["A", "B"], ["B", "A"], ["A", "C", "B"], ["A", "A"]]
+    print(rule.apply(log))
+    print(rule.repair(log))

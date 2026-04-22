@@ -29,14 +29,37 @@ STRATEGY_OPTIONS = {"From Data": "DATA", "From Text": "TEXT"}
 TEMP_FOLDER = "/tmp/rim_uploads"
 
 
-def compute_metrics(model, log, net, im, fm):
+def get_children_activities(tree):
+    activities = set()
+    if tree.label is not None:
+        activities.add(tree.label)
+    else:
+        for child in tree.children:
+            activities.update(get_children_activities(child))
+    return activities
+
+
+def get_relevant_rules(activities, rules):
+    relevant = []
+    for rule in rules:
+        # check if activity_a and activity_b are both in it
+        if hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
+            if rule.activity_a in activities and rule.activity_b in activities:
+                relevant.append(rule)
+        elif hasattr(rule, "target_activity"):
+            if rule.target_activity in activities:
+                relevant.append(rule)
+    return relevant
+
+
+def compute_metrics(model, log, rules, net, im, fm):
     fitness = fitness_token_based(log, net, im, fm)
     precision = precision_token_based(log, net, im, fm)
     complexity = complexity_size(net)
     rule_conformance = rule_conformance_apply(
         model,
-        st.session_state["used_rules"] if "used_rules" in st.session_state else [],
-    )[0]
+        rules if rules else [],
+    )
     return {
         "fitness": fitness,
         "precision": precision,
@@ -61,13 +84,6 @@ def reset_rule_discovery_state():
 
 
 def reset_discovery_on_strategy_change():
-    old_strategy = st.session_state.get("last_discovery_strategy")
-    new_strategy = st.session_state.get("discovery_strategy")
-
-    if old_strategy == new_strategy:
-        return
-
-    st.session_state["last_discovery_strategy"] = new_strategy
 
     st.session_state["discovery_done"] = False
     st.session_state["discovered_rules"] = []
@@ -79,6 +95,9 @@ def reset_discovery_on_strategy_change():
     )
 
     st.session_state.pop("model", None)
+    st.session_state.pop("stats", None)
+    st.session_state.pop("activity_filter", None)
+    st.session_state.pop("rule_type_filter", None)
 
 
 def render_sidebar_progress():
@@ -105,10 +124,25 @@ def render_sidebar_progress():
     if current > 0:
         if st.button("⬅ Back", use_container_width=True):
             st.session_state["current_step"] -= 1
+            if st.session_state["current_step"] == 2:
+                st.session_state["discovery_strategy"] = st.session_state.get(
+                    "locked_discovery_strategy",
+                    st.session_state.get("discovery_strategy", "From Data"),
+                )
+                st.session_state["last_discovery_strategy"] = st.session_state[
+                    "discovery_strategy"
+                ]
+
+                st.session_state["text_rule_description"] = st.session_state.get(
+                    "locked_text_rule_description",
+                    st.session_state.get("text_rule_description", ""),
+                )
             if st.session_state["current_step"] == 1:
                 reset_rule_discovery_state()
                 st.session_state.pop("event_log", None)
             st.session_state.pop("model", None)
+            st.session_state.pop("stats", None)
+
             st.rerun()
 
     if st.button("Restart Session", type="secondary", use_container_width=True):
@@ -235,9 +269,14 @@ def rule_discovery():
             strategy = st.selectbox(
                 "Strategy",
                 options=options,
-                on_change=reset_discovery_on_strategy_change,
                 key="discovery_strategy",
             )
+
+            if st.session_state["last_discovery_strategy"] != strategy:
+                reset_discovery_on_strategy_change()
+                st.session_state["last_discovery_strategy"] = strategy
+                st.rerun()
+
             disabled = strategy != "From Data"
         with c2:
             support_val = st.number_input(
@@ -510,6 +549,17 @@ def rule_discovery():
                 st.toast(
                     "Rules locked in! Moving to Process Discovery stage.", icon="🚀"
                 )
+                st.session_state["locked_discovery_strategy"] = st.session_state[
+                    "discovery_strategy"
+                ]
+                st.session_state["locked_text_rule_description"] = st.session_state.get(
+                    "text_rule_description",
+                    "",
+                )
+                st.session_state["last_discovery_strategy"] = st.session_state[
+                    "discovery_strategy"
+                ]
+
                 rule_by_id = {str(r): r for r in st.session_state["discovered_rules"]}
                 st.session_state["used_rules"] = [
                     rule_by_id[rid]
@@ -517,6 +567,8 @@ def rule_discovery():
                     if rid in rule_by_id
                 ]
                 st.session_state.pop("model", None)
+                st.session_state.pop("stats", None)
+
                 st.session_state["current_step"] = 3
                 st.rerun()
     else:
@@ -652,11 +704,13 @@ def miner_page():
         if "model" not in st.session_state or st.session_state["model"] is None:
             st.warning("No model discovered with current parameters")
             return
-        with st.expander("Show selected rules"):
-            for rule in st.session_state["selected_rules"]:
+        activities = get_children_activities(st.session_state["model"])
+        relevant_rules = get_relevant_rules(activities, st.session_state["used_rules"])
+        with st.expander("Relevant rules"):
+            for rule in relevant_rules:
                 st.markdown(f"- {rule}")
                 st.write("")
-        viz_col1, viz_col2 = st.columns([2, 1])
+        viz_col1, _ = st.columns([2, 1])
 
         with viz_col1:
             view_mode = st.segmented_control(
@@ -669,7 +723,12 @@ def miner_page():
         # Mini Stats for the model
         if "stats" not in st.session_state:
             stats = compute_metrics(
-                st.session_state["model"], st.session_state["event_log"], net, im, fm
+                st.session_state["model"],
+                st.session_state["event_log"],
+                relevant_rules,
+                net,
+                im,
+                fm,
             )
             st.session_state["stats"] = stats
         # show the metrics
@@ -691,14 +750,45 @@ def miner_page():
             </div>
             <div class="metric-card">
                 <div class="metric-label">Rule Conformance</div>
-                <div class="metric-value">{st.session_state['stats']['rule_conformance']:.3f}</div>
+                <div class="metric-value">{st.session_state['stats']['rule_conformance'][0]:.3f}</div>
             </div>
         </div>
         """
 
         st.markdown(metric_html, unsafe_allow_html=True)
-        gviz = None
+        unsat_rules = st.session_state["stats"]["rule_conformance"][1]
 
+        if unsat_rules:
+            st.warning(
+                f"{len(unsat_rules)} unsatisfied rule{'s' if len(unsat_rules) != 1 else ''}"
+            )
+            with st.expander("Show Unsatisfied Rules"):
+                st.markdown(
+                    """
+                    <style>
+                    .rule-chip {
+                        display: inline-block;
+                        padding: 0.35rem 0.6rem;
+                        margin: 0.2rem 0.25rem 0.2rem 0;
+                        border-radius: 999px;
+                        background: #ffe8e8;
+                        color: #8a1f1f;
+                        border: 1px solid #ffb8b8;
+                        font-size: 0.9rem;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown(
+                    " ".join(
+                        f'<span class="rule-chip">{rule}</span>' for rule in unsat_rules
+                    ),
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("All rules satisfied")
         with st.container(border=True):
             try:
                 if view_mode == "Process Tree":
