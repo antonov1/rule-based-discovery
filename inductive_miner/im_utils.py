@@ -1,8 +1,17 @@
+from enum import Enum
 from typing import Callable, List
 
 from inductive_miner.cuts import LoopCut
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
+
+
+class RepairVariant(Enum):
+    EventLevel = "event_level"
+    TraceLevel = "trace_level"
+
+
+REPAIR_VARIANT = RepairVariant.TraceLevel
 
 
 def acts_of(log):
@@ -145,7 +154,7 @@ def _build_single_activity_tree(
             group_1 = set(activity)
             unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
             if len(unsat_rules) > 0:
-                return repair_behavior(log, unsat_rules, im_function, rules)
+                return repair_mechanism(log, unsat_rules, im_function, rules)
 
         return _build_loop_tree(do_first=None, redo=activity)
     if rules:
@@ -153,7 +162,7 @@ def _build_single_activity_tree(
         group_1 = set()
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
         if len(unsat_rules) > 0:
-            return repair_behavior(log, unsat_rules, im_function, rules)
+            return repair_mechanism(log, unsat_rules, im_function, rules)
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -192,7 +201,42 @@ def supported_rules(log, rules):
     return filtered
 
 
-def repair_behavior(
+def event_level_repair(
+    log,
+    unsat_rules: List[AbstractRule],
+    im_function: Callable,
+    original_rules: List[AbstractRule],
+):
+    repaired_log = log
+    original_event_count = sum(len(trace) for trace in log)
+    num_traces_orig = len(log)
+    changed = False
+
+    for rule in unsat_rules:
+        new_log = rule.repair(repaired_log)
+
+        if not new_log:
+            return None
+
+        if new_log != repaired_log:
+            changed = True
+
+        repaired_log = new_log
+    new_rules = supported_rules(repaired_log, original_rules)
+
+    if not changed:
+        return None
+
+    repaired_event_count = sum(len(trace) for trace in repaired_log)
+    if (
+        repaired_event_count == original_event_count
+        and len(repaired_log) == num_traces_orig
+    ):
+        return None
+    return im_function(repaired_log, new_rules)
+
+
+def trace_level_repair(
     log,
     unsat_rules: List[AbstractRule],
     im_function: Callable,
@@ -213,5 +257,19 @@ def repair_behavior(
         #    f"The new rules are: {new_rules} for log with acts: {set([e for trace in intersection for e in trace])}"
         # )
         assert_rules_supported("repair_behavior -> recurse", intersection, new_rules)
-        # print(f"Original Log was: {log}, new is: {intersection}")
-        return normalize_tree(im_function(intersection, new_rules))
+        return im_function(intersection, new_rules)
+
+
+def repair_mechanism(
+    log,
+    unsat_rules: List[AbstractRule],
+    im_function: Callable,
+    original_rules: List[AbstractRule],
+    mode: RepairVariant = REPAIR_VARIANT,
+):
+    if mode == RepairVariant.EventLevel:
+        return event_level_repair(log, unsat_rules, im_function, original_rules)
+    elif mode == RepairVariant.TraceLevel:
+        return trace_level_repair(log, unsat_rules, im_function, original_rules)
+    else:
+        raise Exception(f"Unknown repair mode: {mode}")

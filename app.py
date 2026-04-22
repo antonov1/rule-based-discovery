@@ -4,8 +4,12 @@ import tempfile
 
 import pm4py
 import streamlit as st
-from inductive_miner.main import apply_IM, apply_IM_with_rules
+from inductive_miner.main import apply_IM_with_rules
 from llm_connection.query import query_llm_for_declare_rules
+from metrics.fitness import fitness_token_based
+from metrics.precision import precision_token_based
+from metrics.rule_conformance import apply as rule_conformance_apply
+from metrics.simplicity import complexity_size
 from pm4py.objects.bpmn.layout import layouter
 from pm4py.visualization.bpmn import visualizer as bpmn_visualizer
 from pm4py.visualization.petri_net import visualizer as pn_visualizer
@@ -14,6 +18,7 @@ from powl import import_event_log
 from promoai.general_utils.ai_providers import (
     AI_HELP_DEFAULTS,
     AI_MODEL_DEFAULTS,
+    AIProviders,
     MAIN_HELP,
 )
 from promoai.general_utils.llm_connection import LLMConnection
@@ -22,6 +27,58 @@ from utils.preprocess import preprocess_log
 
 STRATEGY_OPTIONS = {"From Data": "DATA", "From Text": "TEXT"}
 TEMP_FOLDER = "/tmp/rim_uploads"
+
+
+def compute_metrics(model, log, net, im, fm):
+    fitness = fitness_token_based(log, net, im, fm)
+    precision = precision_token_based(log, net, im, fm)
+    complexity = complexity_size(net)
+    rule_conformance = rule_conformance_apply(
+        model,
+        st.session_state["used_rules"] if "used_rules" in st.session_state else [],
+    )[0]
+    return {
+        "fitness": fitness,
+        "precision": precision,
+        "complexity": complexity,
+        "rule_conformance": rule_conformance,
+    }
+
+
+def reset_rule_discovery_state():
+    st.session_state["discovery_done"] = False
+    st.session_state["discovered_rules"] = []
+    st.session_state["selected_rules"] = set()
+    st.session_state["used_rules"] = []
+    st.session_state["current_page"] = 1
+    st.session_state["selection_version"] = (
+        st.session_state.get("selection_version", 0) + 1
+    )
+    st.session_state.pop("model", None)
+    st.session_state.pop("stats", None)
+    st.session_state.pop("activity_filter", None)
+    st.session_state.pop("rule_type_filter", None)
+
+
+def reset_discovery_on_strategy_change():
+    old_strategy = st.session_state.get("last_discovery_strategy")
+    new_strategy = st.session_state.get("discovery_strategy")
+
+    if old_strategy == new_strategy:
+        return
+
+    st.session_state["last_discovery_strategy"] = new_strategy
+
+    st.session_state["discovery_done"] = False
+    st.session_state["discovered_rules"] = []
+    st.session_state["selected_rules"] = set()
+    st.session_state["used_rules"] = []
+    st.session_state["current_page"] = 1
+    st.session_state["selection_version"] = (
+        st.session_state.get("selection_version", 0) + 1
+    )
+
+    st.session_state.pop("model", None)
 
 
 def render_sidebar_progress():
@@ -48,6 +105,10 @@ def render_sidebar_progress():
     if current > 0:
         if st.button("⬅ Back", use_container_width=True):
             st.session_state["current_step"] -= 1
+            if st.session_state["current_step"] == 1:
+                reset_rule_discovery_state()
+                st.session_state.pop("event_log", None)
+            st.session_state.pop("model", None)
             st.rerun()
 
     if st.button("Restart Session", type="secondary", use_container_width=True):
@@ -82,6 +143,18 @@ def initialization():
         st.session_state["show_saved_message"] = False
     if "used_rules" not in st.session_state:
         st.session_state["used_rules"] = []
+    if "discovered_rules" not in st.session_state:
+        st.session_state["discovered_rules"] = []
+    if "discovery_done" not in st.session_state:
+        st.session_state["discovery_done"] = False
+    if "discovery_strategy" not in st.session_state:
+        st.session_state["discovery_strategy"] = "From Data"
+    if "last_discovery_strategy" not in st.session_state:
+        st.session_state["last_discovery_strategy"] = st.session_state[
+            "discovery_strategy"
+        ]
+    if "text_rule_description" not in st.session_state:
+        st.session_state["text_rule_description"] = ""
 
 
 def setup_llm_connection():
@@ -112,6 +185,12 @@ def setup_llm_connection():
             api_key = st.text_input(
                 "API Key", type="password", placeholder="Enter your key here..."
             )
+        if provider == AIProviders.AZURE.value:
+            azure_endpoint = st.text_input(
+                "Azure Endpoint",
+                key="azure_endpoint",
+                placeholder="https://your-resource.openai.azure.com/",
+            )
 
         st.caption(
             "You can continue without credentials if you wish to mine rules only from data."
@@ -119,10 +198,16 @@ def setup_llm_connection():
 
         if st.button("Proceed", use_container_width=True):
             if api_key.strip():
+                if provider == AIProviders.AZURE.value:
+                    args = {"END_POINT": azure_endpoint}
+                else:
+                    args = {}
+
                 st.session_state["llm_credentials"] = LLMConnection(
                     api_key=api_key,
                     llm_name=ai_model_name,
                     ai_provider=provider,
+                    args=args,
                 )
                 st.session_state["show_saved_message"] = True
             else:
@@ -142,12 +227,17 @@ def rule_discovery():
     )
     st.markdown("### 🔍 2. Rule Discovery")
     if "discovered_rules" not in st.session_state:
-        pass
+        st.session_state["discovered_rules"] = []
     # --- Settings Area ---
     with st.container(border=True):
         c1, c2, c3 = st.columns([1.5, 1, 1])
         with c1:
-            strategy = st.selectbox("Strategy", options=options)
+            strategy = st.selectbox(
+                "Strategy",
+                options=options,
+                on_change=reset_discovery_on_strategy_change,
+                key="discovery_strategy",
+            )
             disabled = strategy != "From Data"
         with c2:
             support_val = st.number_input(
@@ -163,6 +253,7 @@ def rule_discovery():
                 "Enter process description",
                 placeholder="Describe the process...",
                 height=100,
+                key="text_rule_description",
             )
         if st.button("Discover Rules ⚡", use_container_width=True):
             st.session_state["discovery_done"] = True
@@ -177,7 +268,7 @@ def rule_discovery():
                 rules_to_consider = []
                 try:
                     rules = query_llm_for_declare_rules(
-                        description,
+                        st.session_state["text_rule_description"],
                         activities=sorted(
                             set(
                                 a
@@ -322,7 +413,11 @@ def rule_discovery():
         items_per_page = 8
         total_rules = len(filtered_rules)
         total_pages = max(1, math.ceil(total_rules / items_per_page))
-
+        if st.session_state.current_page > total_pages:
+            # in case we rediscover rules and we end up, e.g. on page 10 even though there are 2 pages
+            st.session_state.current_page = total_pages
+        if st.session_state.current_page < 1:
+            st.session_state.current_page = 1
         start_idx = (st.session_state.current_page - 1) * items_per_page
         rules_to_display = filtered_rules[start_idx : start_idx + items_per_page]
 
@@ -415,14 +510,15 @@ def rule_discovery():
                 st.toast(
                     "Rules locked in! Moving to Process Discovery stage.", icon="🚀"
                 )
+                rule_by_id = {str(r): r for r in st.session_state["discovered_rules"]}
                 st.session_state["used_rules"] = [
                     rule_by_id[rid]
                     for rid in st.session_state["selected_rules"]
                     if rid in rule_by_id
                 ]
+                st.session_state.pop("model", None)
                 st.session_state["current_step"] = 3
                 st.rerun()
-
     else:
         st.info("Run the discovery engine to view and select process rules.")
 
@@ -535,7 +631,7 @@ def miner_page():
             '<div class="workbench-header">⚒️ Rule Mining </div>',
             unsafe_allow_html=True,
         )
-
+        # remove the model from state if present
         rule_discovery()
     if st.session_state["current_step"] == 3:
         st.markdown(
@@ -545,17 +641,15 @@ def miner_page():
 
         st.markdown("### 3. Process Discovery 🏗️")
         st.caption("Convert discovered rules into a visual process model.")
-        model = None
-        if len(st.session_state["used_rules"]) > 0:
+        if "model" not in st.session_state:
+            pass
 
-            model = apply_IM_with_rules(
+            st.session_state["model"] = apply_IM_with_rules(
                 log=preprocess_log(st.session_state["event_log"]),
                 rules=st.session_state["used_rules"],
             )
-        else:
-            model = apply_IM(preprocess_log(st.session_state["event_log"]))
 
-        if model is None:
+        if "model" not in st.session_state or st.session_state["model"] is None:
             st.warning("No model discovered with current parameters")
             return
         with st.expander("Show selected rules"):
@@ -571,13 +665,38 @@ def miner_page():
                 default="BPMN",
                 key="viz_mode_selector",
             )
+        net, im, fm = pm4py.convert_to_petri_net(st.session_state["model"])
+        # Mini Stats for the model
+        if "stats" not in st.session_state:
+            stats = compute_metrics(
+                st.session_state["model"], st.session_state["event_log"], net, im, fm
+            )
+            st.session_state["stats"] = stats
+        # show the metrics
+        st.markdown("#### Model Metrics")
 
-        with viz_col2:
-            # Mini Stats for the model
-            st.caption("MODEL STATISTICS")
-            st.progress(0.65, text="TO DO")
+        metric_html = f"""
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Fitness</div>
+                <div class="metric-value">{st.session_state['stats']['fitness']:.3f}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Precision</div>
+                <div class="metric-value">{st.session_state['stats']['precision']:.3f}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Complexity</div>
+                <div class="metric-value">{st.session_state['stats']['complexity']}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Rule Conformance</div>
+                <div class="metric-value">{st.session_state['stats']['rule_conformance']:.3f}</div>
+            </div>
+        </div>
+        """
 
-        net, im, fm = pm4py.convert_to_petri_net(model)
+        st.markdown(metric_html, unsafe_allow_html=True)
         gviz = None
 
         with st.container(border=True):
@@ -586,7 +705,9 @@ def miner_page():
                     parameters = {
                         pt_visualizer.Variants.WO_DECORATION.value.Parameters.FORMAT: "svg"
                     }
-                    gviz = pt_visualizer.apply(model, parameters=parameters)
+                    gviz = pt_visualizer.apply(
+                        st.session_state["model"], parameters=parameters
+                    )
 
                 elif view_mode == "Petri Net":
                     gviz = pn_visualizer.apply(

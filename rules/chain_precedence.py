@@ -18,12 +18,34 @@ class ChainPrecedenceRule(PrecedenceRule):
         self.data_len = len(data)
 
         for trace in data:
-            if self.activity_b in trace:
-                index_b = trace.index(self.activity_b)
-                if index_b > 0 and self.activity_a == trace[index_b - 1]:
-                    valid_traces.append(trace)
-            else:
+            is_valid = True
+
+            for i, activity in enumerate(trace):
+                if activity == self.activity_b:
+                    if i == 0 or trace[i - 1] != self.activity_a:
+                        is_valid = False
+                        break
+
+            if is_valid:
                 valid_traces.append(trace)
 
         self.valid_traces_len = len(valid_traces)
         return valid_traces
+
+    def repair(self, data) -> List[Any]:
+        repaired = []
+
+        for trace in data:
+            new_trace = []
+
+            for idx, act in enumerate(trace):
+                if act == self.activity_b:
+                    # add b's only in that case
+                    if idx >= 1 and trace[idx - 1] == self.activity_a:
+                        new_trace.append(act)
+                else:
+                    new_trace.append(act)
+
+            repaired.append(new_trace)
+
+        return repaired

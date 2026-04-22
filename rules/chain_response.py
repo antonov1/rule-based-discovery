@@ -20,13 +20,27 @@ class ChainResponseRule(ResponseRule):
         valid_traces = []
         self.data_len = len(data)
         for trace in data:
+            is_valid = True
             if self.activity_a in trace:
-                index_a = trace.index(self.activity_a)
-                if index_a > 0 and trace[index_a] == self.activity_b:
-                    valid_traces.append(trace)
-            else:
-                valid_traces.append(
-                    trace
-                )  # If activity A is not present, the rule is vacuously satisfied
+                for i, act in enumerate(trace):
+                    if act == self.activity_a:
+                        if i == len(trace) - 1 or trace[i + 1] != self.activity_b:
+                            is_valid = False
+            if is_valid:
+                valid_traces.append(trace)
         self.valid_traces_len = len(valid_traces)
         return valid_traces
+
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            repaired_trace = []
+            for idx, act in enumerate(trace):
+                if act == self.activity_a:
+                    if idx < len(trace) - 1 and trace[idx + 1] == self.activity_b:
+                        repaired_trace.append(act)
+                else:
+                    repaired_trace.append(act)
+            repaired.append(repaired_trace)
+
+        return repaired

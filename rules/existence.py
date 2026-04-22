@@ -21,6 +21,10 @@ class ExistenceRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        # Repair here is just application
+        return self.apply(data)
+
     def calc_support(self) -> float:
         if not self.data_size or not self.valid_traces_len:
             return 0.0

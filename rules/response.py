@@ -31,6 +31,25 @@ class ResponseRule(AbstractRule):
         self.valid_traces_len = len(valid_traces)
         return valid_traces
 
+    def repair(self, data) -> List[Any]:
+        repaired = []
+        for trace in data:
+            seen_b = False
+            new_trace = []
+
+            for act in reversed(trace):
+                # Faster to do it right-to-left
+                if act == self.activity_b:
+                    seen_b = True
+                    new_trace.append(act)
+                elif act == self.activity_a:
+                    if seen_b:
+                        new_trace.append(act)
+                else:
+                    new_trace.append(act)
+            repaired.append(list(reversed(new_trace)))
+        return repaired
+
     def calc_support(self) -> float:
         if not self.data_len or not self.valid_traces_len:
             return 0.0

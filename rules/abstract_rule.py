@@ -32,6 +32,10 @@ class AbstractRule(ABC):
     def calc_confidence(self, data: List[Any]) -> float:
         pass
 
+    @abstractmethod
+    def repair(self, data: List[Any]) -> List:
+        pass
+
     def get_support(self):
         return self.sup
 

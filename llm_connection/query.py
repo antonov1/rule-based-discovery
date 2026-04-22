@@ -88,6 +88,7 @@ def query_llm_for_declare_rules(
     def partial_code_extraction(code, auto_duplicate=False):
         return code_extraction(code, activities=activities)
 
+    args = llm_connection.args if llm_connection.args is not None else {}
     try:
         _, rules, _ = generate_result_with_error_handling(
             msg_history,
@@ -98,6 +99,7 @@ def query_llm_for_declare_rules(
             max_iterations=3,
             additional_iterations=2,
             standard_error_message=ERROR_MESSAGE_CODE_GENERATION_DECLARE,
+            llm_args=args,
         )
         return rules
     except ValueError as e:
