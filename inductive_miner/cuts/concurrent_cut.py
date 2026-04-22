@@ -29,13 +29,16 @@ class ConcurrentCut(BaseCut):
             if isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
                 if any(rule.target_activity in group for group in groups):
                     unsat_rules.append(rule)
+            elif isinstance(rule, ChainPrecedenceRule) or isinstance(
+                rule, ChainResponseRule
+            ):
+                # shouldn't be possible at all even if you split into other groups
+                unsat_rules.append(rule)
             elif (
                 isinstance(rule, NotCoExistenceRule)
                 or isinstance(rule, NotSuccessionRule)
                 or isinstance(rule, PrecedenceRule)
-                or isinstance(rule, ChainPrecedenceRule)
                 or isinstance(rule, ResponseRule)
-                or isinstance(rule, ChainResponseRule)
             ):
                 group_a = next(
                     (group for group in groups if rule.activity_a in group), None

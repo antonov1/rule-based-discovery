@@ -91,7 +91,7 @@ def add_child(parent, child):
         parent.children.append(child)
 
 
-def intersection_of_logs(logs: List[List[str]]) -> List[str]:
+def intersection_of_logs(logs: List[List[List[str]]]) -> List[str]:
     if not logs:
         return []
     intersection = logs[0]

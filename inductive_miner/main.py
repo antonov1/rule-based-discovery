@@ -224,6 +224,17 @@ def apply_BIM_with_rules(
     return ProcessTree()
 
 
+def filter_log_by_rules(log, rules):
+
+    filtered_log = log
+
+    for rule in rules:
+
+        filtered_log = rule.apply(filtered_log)
+
+    return filtered_log
+
+
 def apply_IM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
@@ -241,9 +252,9 @@ def apply_IM_with_rules(
     act_in_log = set([e for trace in log for e in trace])
 
     if rules:
-        intersection_logs = [r.apply(log) for r in rules]
-        intersection_logs = intersection_of_logs(intersection_logs)
-        if len(intersection_logs) == 0:
+        filtered_log = filter_log_by_rules(log, rules)
+        # print(f"The filtered log is: {filtered_log}")
+        if len(filtered_log) == 0:
             act_in_log = set([e for trace in log for e in trace])
             # export the log
 
