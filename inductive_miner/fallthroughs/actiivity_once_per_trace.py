@@ -3,6 +3,7 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
+from inductive_miner.im_utils import repair_mechanism
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule, ExistenceRule
 
@@ -53,8 +54,12 @@ def apply(
     log: List[List[str]],
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
+    rule_strictness=1,
     **kwargs,
 ):
+    acts = sorted({e for trace in log for e in trace})
+    if len(acts) == 1:
+        return None
     candidate = detect(log, rules)
     if not candidate:
         return None
@@ -63,9 +68,14 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
-        if unsat_rules:
-            return None
+        rule_conf = 1 - len(unsat_rules) / len(rules)
+        if rule_conf < rule_strictness:
+
+            return repair_mechanism(
+                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+            )
     # Concurrent Cut (Parallel)
+    print(f"LOG IS: {log}, candidate is: {candidate}")
     parent = ProcessTree(operator=Operator.PARALLEL)
     proj_rules = (
         ConcurrentCut.project_rules(
@@ -81,7 +91,9 @@ def apply(
     add_child(
         parent=parent,
         child=(
-            im_function(projected_logs[0], proj_rules[0])
+            im_function(
+                projected_logs[0], proj_rules[0], rule_strictness=rule_strictness
+            )
             if proj_rules
             else im_function(projected_logs[0])
         ),
@@ -89,7 +101,9 @@ def apply(
     add_child(
         parent=parent,
         child=(
-            im_function(projected_logs[1], proj_rules[1])
+            im_function(
+                projected_logs[1], proj_rules[1], rule_strictness=rule_strictness
+            )
             if proj_rules
             else im_function(projected_logs[1])
         ),
