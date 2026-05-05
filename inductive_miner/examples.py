@@ -304,10 +304,27 @@ if __name__ == "__main__":
         print("Log:", ex["log"])
         print("Rules:", ex["rules"])
         print("Why:", ex["why"])
-        model_constrainted = apply_IM_with_rules(ex["log"], ex["rules"])
-        model_im = normalize_tree(apply_IM(ex["log"]))
-        print(f"IM (no constraints): {model_im}")
-        print(f"RIM: {model_constrainted}")
-        print(
-            f"Semantic similarity with IM (no constraints): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
-        )
+        log = ex["log"]
+        for r in ex["rules"]:
+            log = r.apply(log)
+        model_im = normalize_tree(apply_IM(log))
+        params = [0.25, 0.5, 0.75, 1]
+        for param in params:
+            model_constrainted = normalize_tree(
+                apply_IM_with_rules(ex["log"], ex["rules"], rule_strictness=param)
+            )
+
+            print(f"IM (no constraints): {model_im}")
+
+            print(f"RIM (rule_strictness = {param}): {model_constrainted}")
+            print(
+                f"Semantic similarity with IM (no constraints) for (rule_strictness = {param}): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
+            )
+            """
+            net, im, fm = pm4py.convert_to_petri_net(model_im)
+            pm4py.view_petri_net(net, im, fm)
+            n_log = traces_to_log(ex["log"])
+            print(n_log)
+            print(f"Fitness: {pm4py.fitness_alignments(n_log, net, im, fm)}")
+            """
+            print("====================================")

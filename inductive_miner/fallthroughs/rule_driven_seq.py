@@ -59,7 +59,10 @@ def apply(
     for i in range(len(projections)):
         child_rules = proj_rules[i] if proj_rules else None
         child = (
-            im_function(projections[i], child_rules)
+            im_function(
+                projections[i],
+                child_rules,
+            )
             if child_rules
             else im_function(projections[i])
         )

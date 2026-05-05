@@ -38,6 +38,7 @@ def apply(
     dfg: nx.DiGraph,
     start_activities: Set[str],
     rules: List[AbstractRule] = None,
+    rule_strictness=1,
     **kwargs,
 ) -> Optional[ProcessTree]:
     acts = list(dfg.nodes)
@@ -49,8 +50,11 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace}
         unsat_rules = LoopCut.check_rules(rules, [set(), acts])
-        if unsat_rules:
-            return repair_mechanism(log, unsat_rules, im_function, rules)
+        rule_conf = 1 - len(unsat_rules) / len(rules)
+        if rule_conf < rule_strictness:
+            return repair_mechanism(
+                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+            )
 
     parent = ProcessTree(operator=Operator.LOOP)
 
@@ -63,7 +67,11 @@ def apply(
     )
     assert_rules_supported("In TAU (0):", sublog, proj_rules)
 
-    do_child = im_function(sublog, proj_rules) if proj_rules else im_function(sublog)
+    do_child = (
+        im_function(sublog, proj_rules, rule_strictness=rule_strictness)
+        if proj_rules
+        else im_function(sublog)
+    )
     redo_child = ProcessTree()
 
     add_child(parent=parent, child=do_child)

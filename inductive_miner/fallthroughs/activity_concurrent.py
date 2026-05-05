@@ -13,6 +13,8 @@ def detect(log: List[List[str]], cut_order: List[type], rules=None) -> Optional[
         return None
 
     candidates = sorted({e for trace in log for e in trace})
+    if len(candidates) == 1:
+        return None
     alphabet = candidates.copy()
 
     for candidate in candidates:
@@ -51,6 +53,7 @@ def apply(
     log: List[List[str]],
     cut_order: List[type],
     rules: List[AbstractRule] = None,
+    rule_strictness=1,
     **kwargs,
 ) -> Optional[ProcessTree]:
     candidate = detect(log, cut_order=cut_order)
@@ -60,12 +63,11 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
-        if unsat_rules:
-            repaired = repair_mechanism(log, unsat_rules, im_function, rules)
-            if repaired:
-                return repaired
-            else:
-                return None
+        rule_conf = 1 - len(unsat_rules) / len(rules)
+        if rule_conf < rule_strictness:
+            return repair_mechanism(
+                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+            )
 
     # Binary split
     sublogs = project(log, candidate)
@@ -78,8 +80,14 @@ def apply(
         assert_rules_supported("In CONCUR (0):", sublogs[0], proj_rules[0])
         assert_rules_supported("In CONCUR (1):", sublogs[1], proj_rules[1])
 
-        add_child(parent, im_function(sublogs[0], proj_rules[0]))
-        add_child(parent, im_function(sublogs[1], proj_rules[1]))
+        add_child(
+            parent,
+            im_function(sublogs[0], proj_rules[0], rule_strictness=rule_strictness),
+        )
+        add_child(
+            parent,
+            im_function(sublogs[1], proj_rules[1], rule_strictness=rule_strictness),
+        )
     else:
         add_child(parent, im_function(sublogs[0]))
 

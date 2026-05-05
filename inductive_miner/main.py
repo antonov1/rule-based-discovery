@@ -34,7 +34,9 @@ from utils.directly_follows_graph import DirectlyFollowsGraph
 ENABLE_PRINTS = False
 
 
-def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
+def handle_empty_traces(
+    log, im_function, rules: List[AbstractRule] = None, rule_strictness=1
+):
     if any(len(trace) == 0 for trace in log):
         # Remove empty traces from the log
         non_empty_log = [t for t in log if len(t) > 0]
@@ -43,8 +45,11 @@ def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
             act_set = set([act for trace in log for act in trace])
             groups = [set(), act_set]
             unsat_rules = ExclusiveChoiceCut.check_rules(rules, groups)
-            if len(unsat_rules) > 0:
-                return repair_mechanism(log, unsat_rules, im_function, rules)
+            rule_conf = 1 - len(unsat_rules) / len(rules)
+            if rule_conf < rule_strictness:
+                return repair_mechanism(
+                    log, unsat_rules, im_function, rules, rule_strictness
+                )
 
         if not non_empty_log:
             return ProcessTree()  # Pure Tau
@@ -52,7 +57,7 @@ def handle_empty_traces(log, im_function, rules: List[AbstractRule] = None):
         # Recursively mine the non-empty part and wrap in XOR
 
         subtree = (
-            im_function(non_empty_log, rules)
+            im_function(non_empty_log, rules, rule_strictness=rule_strictness)
             if rules is not None
             else im_function(non_empty_log)
         )
@@ -67,18 +72,44 @@ def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name
     return log.groupby(case_key)[activity_key].apply(list).tolist()
 
 
+def traces_to_log(
+    traces,
+    activity_key="concept:name",
+    case_key="case:concept:name",
+    timestamp_key="time:timestamp",
+):
+    start_time = "2024-01-01 00:00:00"
+    freq = "1min"
+    rows = []
+    current_time = pd.Timestamp(start_time)
+    for case_id, trace in enumerate(traces):
+        for activity in trace:
+            rows.append(
+                {case_key: case_id, activity_key: activity, timestamp_key: current_time}
+            )
+            current_time += pd.Timedelta(freq)
+    df = pd.DataFrame(rows)
+    df[case_key] = df[case_key].astype(str)
+    df[activity_key] = df[activity_key].astype(str)
+    df[timestamp_key] = pd.to_datetime(df[timestamp_key])
+    return df
+
+
 def apply_BIM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
+    rule_strictness=1,
     activity_key="concept:name",
     case_key="case:concept:name",
 ):
+    if rule_strictness < 0 or rule_strictness > 1:
+        raise ValueError("rule_strictness should be between 0 and 1")
     if isinstance(log, pd.DataFrame):
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
 
     act_in_log = set([e for trace in log for e in trace])
 
-    if rules:
+    if rules and rule_strictness > 0:
         intersection_logs = [r.apply(log) for r in rules]
         intersection_logs = intersection_of_logs(intersection_logs)
         if len(intersection_logs) == 0:
@@ -101,7 +132,9 @@ def apply_BIM_with_rules(
     ]
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
-    empty_traces = handle_empty_traces(log, apply_IM_with_rules, rules=rules)
+    empty_traces = handle_empty_traces(
+        log, apply_IM_with_rules, rules=rules, rule_strictness=rule_strictness
+    )
     # print(f"Log is: {log}")
     if empty_traces is not None:
         return empty_traces
@@ -109,7 +142,12 @@ def apply_BIM_with_rules(
     if len(dfg_graph.nodes) <= 1:
         # print(f"Applying base case to log {log}")
         process_tree = base_cases(
-            log, process_tree, dfg_graph, apply_IM_with_rules, rules
+            log,
+            process_tree,
+            dfg_graph,
+            apply_IM_with_rules,
+            rules,
+            rule_strictness=rule_strictness,
         )
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
@@ -125,10 +163,11 @@ def apply_BIM_with_rules(
             if ENABLE_PRINTS:
                 print(f"Groups are: {groups}")
             unsat_rules = cut.check_rules(rules, groups)
-            if unsat_rules:
+            rule_conf = 1 - len(unsat_rules) / len(rules) if rules else 1
+            if rule_conf < rule_strictness:
 
                 repaired_log = repair_mechanism(
-                    log, unsat_rules, apply_BIM_with_rules, rules
+                    log, unsat_rules, apply_BIM_with_rules, rules, rule_strictness
                 )
                 if ENABLE_PRINTS:
                     print(
@@ -153,6 +192,7 @@ def apply_BIM_with_rules(
                 child_node = apply_BIM_with_rules(
                     sublogs[i],
                     projected_rules[i],
+                    rule_strictness=rule_strictness,
                     activity_key=activity_key,
                     case_key=case_key,
                 )
@@ -210,6 +250,7 @@ def apply_BIM_with_rules(
             cut_order=cut_classes,
             im_function=apply_BIM_with_rules,
             rules=rules,
+            rule_strictness=rule_strictness,
         )
         if res:
             if ENABLE_PRINTS:
@@ -225,11 +266,9 @@ def apply_BIM_with_rules(
 
 
 def filter_log_by_rules(log, rules):
-
     filtered_log = log
 
     for rule in rules:
-
         filtered_log = rule.apply(filtered_log)
 
     return filtered_log
@@ -238,9 +277,12 @@ def filter_log_by_rules(log, rules):
 def apply_IM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
+    rule_strictness=1,
     activity_key="concept:name",
     case_key="case:concept:name",
 ):
+    if rule_strictness < 0 or rule_strictness > 1:
+        raise
     # print(f"Rules are: {rules}")
     # print(f"Log is: {log}")
     # First, we can apply the rules to filter the log
@@ -251,7 +293,7 @@ def apply_IM_with_rules(
     # Check if the support of rule combos is bigger than 0, if not, raise Exception
     act_in_log = set([e for trace in log for e in trace])
 
-    if rules:
+    if rules and rule_strictness > 0:
         filtered_log = filter_log_by_rules(log, rules)
         # print(f"The filtered log is: {filtered_log}")
         if len(filtered_log) == 0:
@@ -270,7 +312,10 @@ def apply_IM_with_rules(
     cut_classes = [ExclusiveChoiceCut, StrictSequenceCut, ConcurrentCut, LoopCut]
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
-    empty_traces = handle_empty_traces(log, apply_IM_with_rules, rules=rules)
+
+    empty_traces = handle_empty_traces(
+        log, apply_IM_with_rules, rules=rules, rule_strictness=rule_strictness
+    )
     # print(f"Log is: {log}")
     if empty_traces is not None:
         return empty_traces
@@ -278,7 +323,12 @@ def apply_IM_with_rules(
     if len(dfg_graph.nodes) <= 1:
         # print(f"Applying base case to log {log}")
         process_tree = base_cases(
-            log, process_tree, dfg_graph, apply_IM_with_rules, rules
+            log,
+            process_tree,
+            dfg_graph,
+            apply_IM_with_rules,
+            rules,
+            rule_strictness=rule_strictness,
         )
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
@@ -294,10 +344,11 @@ def apply_IM_with_rules(
             if ENABLE_PRINTS:
                 print(f"Groups are: {groups}")
             unsat_rules = cut.check_rules(rules, groups)
-            if unsat_rules:
+            rule_conf = 1 - len(unsat_rules) / len(rules) if rules else 1
+            if rule_conf < rule_strictness:
 
                 repaired_log = repair_mechanism(
-                    log, unsat_rules, apply_IM_with_rules, rules
+                    log, unsat_rules, apply_IM_with_rules, rules, rule_strictness
                 )
                 if ENABLE_PRINTS:
                     print(
@@ -324,6 +375,7 @@ def apply_IM_with_rules(
                     projected_rules[i],
                     activity_key=activity_key,
                     case_key=case_key,
+                    rule_strictness=rule_strictness,
                 )
                 add_child(process_tree, child_node)
             if ENABLE_PRINTS:
@@ -379,6 +431,7 @@ def apply_IM_with_rules(
             cut_order=cut_classes,
             im_function=apply_IM_with_rules,
             rules=rules,
+            rule_strictness=rule_strictness,
         )
         if res:
             if ENABLE_PRINTS:

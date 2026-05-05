@@ -26,7 +26,7 @@ def preprocess_log_v2(log):
 
 
 def test_im():
-    for i in range(10):
+    for i in range(100):
         process_tree = simulate_process_tree()
         log = preprocess_log_v2(playout_process_tree(process_tree))
         log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)

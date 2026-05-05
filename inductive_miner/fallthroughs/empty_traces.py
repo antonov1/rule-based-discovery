@@ -23,6 +23,7 @@ def apply(
     log: List[List[str]],
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
+    rule_strictness=1,
     **kwargs,
 ) -> ProcessTree:
     if not detect(dfg):
@@ -34,8 +35,12 @@ def apply(
     if rules:
         acts = set(act for trace in log for act in trace)
         unsat_rules = ExclusiveChoiceCut.check_rules(rules, [set(), acts])
-        if unsat_rules:
-            return repair_mechanism(log, unsat_rules, im_function, rules)
+        rule_conf = 1 - len(unsat_rules) / len(rules) if rules else 1
+
+        if rule_conf < rule_strictness:
+            return repair_mechanism(
+                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+            )
     parent = ProcessTree(operator=Operator.XOR)
     tau_child = ProcessTree()
     add_child(parent=parent, child=tau_child)
@@ -45,7 +50,7 @@ def apply(
         proj_rules = ExclusiveChoiceCut.project_rules(
             rules, [set(), set(act for trace in log for act in trace)]
         )[1]
-        non_tau_child = im_function(sublog, proj_rules)
+        non_tau_child = im_function(sublog, proj_rules, rule_strictness=rule_strictness)
     else:
         non_tau_child = im_function(sublog)
 
