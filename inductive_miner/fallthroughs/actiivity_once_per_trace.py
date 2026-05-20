@@ -3,7 +3,7 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism
+from inductive_miner.im_utils import repair_mechanism, RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule, ExistenceRule
 
@@ -55,6 +55,7 @@ def apply(
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
     rule_strictness=1,
+    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ):
     acts = sorted({e for trace in log for e in trace})
@@ -72,7 +73,12 @@ def apply(
         if rule_conf < rule_strictness:
 
             return repair_mechanism(
-                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
     # Concurrent Cut (Parallel)
     print(f"LOG IS: {log}, candidate is: {candidate}")
@@ -92,7 +98,10 @@ def apply(
         parent=parent,
         child=(
             im_function(
-                projected_logs[0], proj_rules[0], rule_strictness=rule_strictness
+                projected_logs[0],
+                proj_rules[0],
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
             if proj_rules
             else im_function(projected_logs[0])
@@ -102,7 +111,10 @@ def apply(
         parent=parent,
         child=(
             im_function(
-                projected_logs[1], proj_rules[1], rule_strictness=rule_strictness
+                projected_logs[1],
+                proj_rules[1],
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
             if proj_rules
             else im_function(projected_logs[1])

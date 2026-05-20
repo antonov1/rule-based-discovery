@@ -2,7 +2,11 @@ from typing import Callable, List, Optional
 
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import assert_rules_supported, repair_mechanism
+from inductive_miner.im_utils import (
+    assert_rules_supported,
+    repair_mechanism,
+    RepairVariant,
+)
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
@@ -54,6 +58,7 @@ def apply(
     cut_order: List[type],
     rules: List[AbstractRule] = None,
     rule_strictness=1,
+    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
     candidate = detect(log, cut_order=cut_order)
@@ -66,7 +71,12 @@ def apply(
         rule_conf = 1 - len(unsat_rules) / len(rules)
         if rule_conf < rule_strictness:
             return repair_mechanism(
-                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
 
     # Binary split
@@ -82,11 +92,21 @@ def apply(
 
         add_child(
             parent,
-            im_function(sublogs[0], proj_rules[0], rule_strictness=rule_strictness),
+            im_function(
+                sublogs[0],
+                proj_rules[0],
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
+            ),
         )
         add_child(
             parent,
-            im_function(sublogs[1], proj_rules[1], rule_strictness=rule_strictness),
+            im_function(
+                sublogs[1],
+                proj_rules[1],
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
+            ),
         )
     else:
         add_child(parent, im_function(sublogs[0]))

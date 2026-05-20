@@ -3,7 +3,11 @@ from typing import Callable, List, Optional
 import networkx as nx
 from inductive_miner.cuts import LoopCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import assert_rules_supported, repair_mechanism
+from inductive_miner.im_utils import (
+    assert_rules_supported,
+    repair_mechanism,
+    RepairVariant,
+)
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -40,6 +44,7 @@ def apply(
     end_activities: set[str],
     rules: List[AbstractRule] = None,
     rule_strictness=1,
+    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
     acts = list(dfg.nodes)
@@ -54,7 +59,12 @@ def apply(
         rule_conf = 1 - len(unsat_rules) / len(rules)
         if rule_conf < rule_strictness:
             return repair_mechanism(
-                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
 
     parent = ProcessTree(operator=Operator.LOOP)
@@ -68,7 +78,9 @@ def apply(
     assert_rules_supported("In STAU (0):", sublog, proj_rules)
 
     do_child = (
-        im_function(sublog, proj_rules, rule_strictness=rule_strictness)
+        im_function(
+            sublog, proj_rules, rule_strictness=rule_strictness, repair_mode=repair_mode
+        )
         if proj_rules
         else im_function(sublog)
     )

@@ -3,7 +3,7 @@ from typing import Callable, List
 import networkx as nx
 from inductive_miner.cuts import ExclusiveChoiceCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism
+from inductive_miner.im_utils import repair_mechanism, RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -24,6 +24,7 @@ def apply(
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
     rule_strictness=1,
+    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> ProcessTree:
     if not detect(dfg):
@@ -39,7 +40,12 @@ def apply(
 
         if rule_conf < rule_strictness:
             return repair_mechanism(
-                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                rule_strictness=rule_strictness,
+                repair_mode=repair_mode,
             )
     parent = ProcessTree(operator=Operator.XOR)
     tau_child = ProcessTree()
@@ -50,7 +56,9 @@ def apply(
         proj_rules = ExclusiveChoiceCut.project_rules(
             rules, [set(), set(act for trace in log for act in trace)]
         )[1]
-        non_tau_child = im_function(sublog, proj_rules, rule_strictness=rule_strictness)
+        non_tau_child = im_function(
+            sublog, proj_rules, rule_strictness=rule_strictness, repair_mode=repair_mode
+        )
     else:
         non_tau_child = im_function(sublog)
 

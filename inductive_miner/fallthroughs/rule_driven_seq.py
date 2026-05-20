@@ -7,7 +7,7 @@ from inductive_miner.fallthroughs.fallthrough_utils import (
     ARTIFICIAL_START,
     build_cdg,
 )
-from inductive_miner.im_utils import repair_mechanism
+from inductive_miner.im_utils import repair_mechanism, RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -37,6 +37,7 @@ def apply(
     log: List[List[str]],
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
+    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
     alphabet = set(dfg.nodes) - {"ArtificialNoneNode"}

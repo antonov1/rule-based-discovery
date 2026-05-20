@@ -6,9 +6,9 @@ import pm4py
 import streamlit as st
 from inductive_miner.main import apply_IM_with_rules
 from llm_connection.query import query_llm_for_declare_rules
-from metrics.fitness import fitness_token_based
-from metrics.precision import precision_token_based
-from metrics.rule_conformance import apply as rule_conformance_apply
+from metrics.fitness import fitness_token_based_tree as fitness_token_based
+from metrics.precision import precision_token_based_tree as precision_token_based
+from metrics.rule_conformance import conformance as rule_conformance_apply
 from metrics.simplicity import complexity_size
 from pm4py.objects.bpmn.layout import layouter
 from pm4py.visualization.bpmn import visualizer as bpmn_visualizer
@@ -23,6 +23,7 @@ from promoai.general_utils.ai_providers import (
 )
 from promoai.general_utils.llm_connection import LLMConnection
 from rule_extraction.from_data import extract
+from rules.rule_utils import minimize_rule_set
 from utils.preprocess import preprocess_log
 
 STRATEGY_OPTIONS = {"From Data": "DATA", "From Text": "TEXT"}
@@ -52,14 +53,12 @@ def get_relevant_rules(activities, rules):
     return relevant
 
 
-def compute_metrics(model, log, rules, net, im, fm):
-    fitness = fitness_token_based(log, net, im, fm)
-    precision = precision_token_based(log, net, im, fm)
+def compute_metrics(model, log, rules, net):
+    fitness = fitness_token_based(log, model)
+    precision = precision_token_based(log, model)
     complexity = complexity_size(net)
-    rule_conformance = rule_conformance_apply(
-        model,
-        rules if rules else [],
-    )
+    alphabet = set(log["concept:name"].unique())
+    rule_conformance = rule_conformance_apply(model, rules if rules else [], alphabet)
     return {
         "fitness": fitness,
         "precision": precision,
@@ -298,11 +297,17 @@ def rule_discovery():
             st.session_state["discovery_done"] = True
             st.toast("Hold on tight, discovering rules", icon="🔍")
             if strategy == "From Data":
-                st.session_state["discovered_rules"] = extract(
-                    preprocess_log(st.session_state["event_log"]),
+                preprocessed_log = preprocess_log(st.session_state["event_log"])
+                extracted = extract(
+                    preprocessed_log,
                     min_support=support_val,
                     min_confidence=conf_val,
                 )
+                st.session_state["discovered_rules"] = minimize_rule_set(
+                    extracted, preprocessed_log
+                )
+                # st.session_state["discovered_rules"] = extracted
+
             elif strategy == "From Text":
                 rules_to_consider = []
                 try:
@@ -727,8 +732,6 @@ def miner_page():
                 st.session_state["event_log"],
                 relevant_rules,
                 net,
-                im,
-                fm,
             )
             st.session_state["stats"] = stats
         # show the metrics
