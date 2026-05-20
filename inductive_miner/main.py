@@ -23,19 +23,28 @@ from inductive_miner.im_utils import (
     assert_rules_supported,
     base_cases,
     intersection_of_logs,
-    normalize_tree,
     repair_mechanism,
 )
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import *
-from metrics.rule_conformance import apply as rule_conformance_apply
+from inductive_miner.im_utils import RepairVariant
+from metrics.fitness import fitness_token_based_tree
+from metrics.precision import precision_token_based_tree
+from metrics.rule_conformance import (
+    conformance as rule_conformance_apply,
+    weighted_conformance as weighted_rule_conformance_apply,
+)
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
 ENABLE_PRINTS = False
 
 
 def handle_empty_traces(
-    log, im_function, rules: List[AbstractRule] = None, rule_strictness=1
+    log,
+    im_function,
+    rules: List[AbstractRule] = None,
+    rule_strictness=1,
+    repair_mode=RepairVariant.TraceLevel,
 ):
     if any(len(trace) == 0 for trace in log):
         # Remove empty traces from the log
@@ -48,7 +57,7 @@ def handle_empty_traces(
             rule_conf = 1 - len(unsat_rules) / len(rules)
             if rule_conf < rule_strictness:
                 return repair_mechanism(
-                    log, unsat_rules, im_function, rules, rule_strictness
+                    log, unsat_rules, im_function, rules, rule_strictness, repair_mode
                 )
 
         if not non_empty_log:
@@ -280,6 +289,7 @@ def apply_IM_with_rules(
     rule_strictness=1,
     activity_key="concept:name",
     case_key="case:concept:name",
+    repair_mode=RepairVariant.TraceLevel,
 ):
     if rule_strictness < 0 or rule_strictness > 1:
         raise
@@ -314,7 +324,11 @@ def apply_IM_with_rules(
     # Check if the log has exactly one activity or empty traces
 
     empty_traces = handle_empty_traces(
-        log, apply_IM_with_rules, rules=rules, rule_strictness=rule_strictness
+        log,
+        apply_IM_with_rules,
+        rules=rules,
+        rule_strictness=rule_strictness,
+        repair_mode=repair_mode,
     )
     # print(f"Log is: {log}")
     if empty_traces is not None:
@@ -348,7 +362,12 @@ def apply_IM_with_rules(
             if rule_conf < rule_strictness:
 
                 repaired_log = repair_mechanism(
-                    log, unsat_rules, apply_IM_with_rules, rules, rule_strictness
+                    log,
+                    unsat_rules,
+                    apply_IM_with_rules,
+                    rules,
+                    rule_strictness,
+                    repair_mode,
                 )
                 if ENABLE_PRINTS:
                     print(
@@ -376,6 +395,7 @@ def apply_IM_with_rules(
                     activity_key=activity_key,
                     case_key=case_key,
                     rule_strictness=rule_strictness,
+                    repair_mode=repair_mode,
                 )
                 add_child(process_tree, child_node)
             if ENABLE_PRINTS:
@@ -432,6 +452,7 @@ def apply_IM_with_rules(
             im_function=apply_IM_with_rules,
             rules=rules,
             rule_strictness=rule_strictness,
+            repair_mode=repair_mode,
         )
         if res:
             if ENABLE_PRINTS:
@@ -629,75 +650,89 @@ def apply_binary_IM(
 
 
 if __name__ == "__main__":
-    pass
-
-    example_log = [["B", "A", "B", "A", "B"], ["B"]]
-    org = apply_IM(example_log)
-    print(f"ORG: {org}")
-
-    rules = [ExistenceRule("A")]
-    print(apply_IM_with_rules(example_log, rules=rules))
-
-    bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
-    bpic_log = pm4py.convert_to_dataframe(bpic)
-    # rules = [ExistenceRule("O_CANCELLED"]), ExistenceRule("A_APPROVED"])]
-
-    rules = [
-        ResponseRule("A_DECLINED", "W_Completeren aanvraag"),
-        PrecedenceRule("A_ACCEPTED", "A_DECLINED"),
-        ExistenceRule("A_DECLINED"),
-    ]
-
-    rules = [
-        ExistenceRule("A_Denied"),
-        ResponseRule("A_Denied", "W_Complete application"),
-    ]
-    # rules = [ExistenceRule("A_FINALIZED"])]
-
-    rules = [
-        AtMostOnceRule("O_Create Offer"),
-        PrecedenceRule("O_Accepted", "A_Pending"),
-    ]
-
-    # rules = [NotSuccessionRule("O_Create Offer", "W_Call after offers"])]
-    model = normalize_tree(apply_BIM_with_rules(bpic_log, rules))
-    net, im, fm = pm4py.convert_to_petri_net(model)
-    net, im, fm = pm4py.reduce_petri_net_implicit_places(net, im, fm)
-    print(f"(BIM) Model is: {model}")
-    model = normalize_tree(apply_IM_with_rules(bpic_log, rules))
-    print(f"Model is: {model}")
-    print(rule_conformance_apply(model, rules))
-
     """
-    # gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
-    # pm4py.visualization.petri_net.visualizer.view(gviz)
 
-    fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
-    print(f"Fitness: {fitness}")
-    prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
-    print(f"Prec: {prec}")
+        example_log = [["B", "A", "B", "A", "B"], ["B"]]
+        org = apply_IM(example_log)
+        print(f"ORG: {org}")
 
+        rules = [ExistenceRule("A")]
+        print(apply_IM_with_rules(example_log, rules=rules))
+
+        bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
+        bpic_log = pm4py.convert_to_dataframe(bpic)
+        # rules = [ExistenceRule("O_CANCELLED"]), ExistenceRule("A_APPROVED"])]
+
+        rules = [
+            ResponseRule("A_DECLINED", "W_Completeren aanvraag"),
+            PrecedenceRule("A_ACCEPTED", "A_DECLINED"),
+            ExistenceRule("A_DECLINED"),
+        ]
+
+        rules = [
+            ExistenceRule("A_Denied"),
+            ResponseRule("A_Denied", "W_Complete application"),
+        ]
+        # rules = [ExistenceRule("A_FINALIZED"])]
+
+        rules = [
+            AtMostOnceRule("O_Create Offer"),
+            PrecedenceRule("O_Accepted", "A_Pending"),
+        ]
+
+        # rules = [NotSuccessionRule("O_Create Offer", "W_Call after offers"])]
+        model = normalize_tree(apply_BIM_with_rules(bpic_log, rules))
+        net, im, fm = pm4py.convert_to_petri_net(model)
+        net, im, fm = pm4py.reduce_petri_net_implicit_places(net, im, fm)
+        print(f"(BIM) Model is: {model}")
+        model = normalize_tree(apply_IM_with_rules(bpic_log, rules))
+        print(f"Model is: {model}")
+        print(rule_conformance_apply(model, rules))
+
+
+        # gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
+        # pm4py.visualization.petri_net.visualizer.view(gviz)
+
+        fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
+        print(f"Fitness: {fitness}")
+        prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
+        print(f"Prec: {prec}")
+
+        rules = [
+            PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
+            CoExistenceRule("ER Sepsis Triage", "CRP"),
+            ExistenceRule("ER Sepsis Triage"),
+            CoExistenceRule("ER Sepsis Triage", "LacticAcid")
+        ]
+
+        Response(ER Sepsis Triage, LacticAcid)
+    Response(ER Sepsis Triage, IV Antibiotics)
+    Initialization(ER Registration)
+    NotCoExistence(Admission NC, Release A)
+    """
     rules = [
-    ResponseRule("ER Sepsis Triage", "Admission NC"),
-    InitializationRule("ER Registration"),
-    ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
-    ]
-
-    Response(ER Sepsis Triage, LacticAcid)
-Response(ER Sepsis Triage, IV Antibiotics)
-Initialization(ER Registration)
-NotCoExistence(Admission NC, Release A)
-
-    rules = [
-        #ResponseRule("ER Sepsis Triage", "LacticAcid"),
+        ResponseRule("ER Sepsis Triage", "LacticAcid"),
         ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
         InitializationRule("ER Registration"),
         NotCoExistenceRule("Admission NC", "Release A"),
-
     ]
+
     log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log = pm4py.convert_to_dataframe(log)
+    log_org = log.copy()
+
     log = preprocess_log(log)
-    model = apply_IM_with_rules(log, rules=rules)
+    for r in rules:
+        log = r.apply(log)
+    model = apply_IM(log)
     print(model)
-"""
+    fitness = fitness_token_based_tree(log_org, model)
+    prec = precision_token_based_tree(log_org, model)
+    print(f"Fit: {fitness}, prec: {prec}")
+    rule_conf = rule_conformance_apply(
+        model, rules, alphabet=set(log_org["concept:name"].unique())
+    )
+    weighted_rule_conf = weighted_rule_conformance_apply(
+        model, rules, alphabet=set(log_org["concept:name"].unique()), log=log
+    )
+    print(f"Rule Conf: {rule_conf}, Weighted Rule Conf : {rule_conf}")

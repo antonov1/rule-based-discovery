@@ -1,5 +1,6 @@
 from typing import Any, List
 
+from automata.fa.dfa import DFA
 from rules.abstract_rule import AbstractRule
 
 
@@ -49,3 +50,29 @@ class InitializationRule(AbstractRule):
         # For InitializationRule, confidence is equivalent to support
         self.conf = self.calc_support()
         return self.conf
+
+    def to_automaton(self, alphabet: set) -> DFA:
+        act = self.target_activity
+
+        if act not in alphabet:
+            raise ValueError(f"activity {act!r} is not in alphabet {alphabet}")
+
+        q0 = "q0"  # initial state
+        q1 = "q1"  # accepting state
+        q2 = "q2"  # rejecting state
+
+        transitions = {
+            q0: {symbol: q2 for symbol in alphabet if symbol != act},
+            q1: {symbol: q1 for symbol in alphabet},
+            q2: {symbol: q2 for symbol in alphabet},
+        }
+
+        transitions[q0][act] = q1
+
+        return DFA(
+            states={q0, q1, q2},
+            input_symbols=set(alphabet),
+            transitions=transitions,
+            initial_state=q0,
+            final_states={q1},
+        )

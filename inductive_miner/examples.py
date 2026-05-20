@@ -1,5 +1,8 @@
 from rules import *
 from inductive_miner.main import *
+from inductive_miner.im_utils import RepairVariant
+from metrics.fitness import fitness_alignment
+from metrics.precision import precision_alignment_tree
 
 if __name__ == "__main__":
     examples = [
@@ -288,10 +291,9 @@ if __name__ == "__main__":
             "log": [
                 ["A", "B", "C"],
                 ["D", "A", "B"],
-                ["B", "A", "C", "B"],  # B is too early
-                ["A", "C"],
+                ["B", "A", "C", "D", "B"],  # B is too early
             ],
-            "rules": [PrecedenceRule("A", "B"), ChainResponseRule("B", "C")],
+            "rules": [PrecedenceRule("A", "B"), NotCoExistenceRule("D", "A")],
             "why": (
                 "In ['B', 'A', 'C'], the problem is local: B occurs before A once. A surgical repair could "
                 "move B after A or delete that early B. A subtrace-rejection approach is more likely to force "
@@ -299,32 +301,64 @@ if __name__ == "__main__":
             ),
         },
     ]
-    for ex in examples:
+    global REPAIR_VARIANT
+    for ex in examples[24:25]:
         print(f"\n--- {ex['name']} ---")
         print("Log:", ex["log"])
         print("Rules:", ex["rules"])
         print("Why:", ex["why"])
         log = ex["log"]
+        log_org = traces_to_log(log)
+        log_c = log.copy()
         for r in ex["rules"]:
-            log = r.apply(log)
+            log_c = r.apply(log_c)
         model_im = normalize_tree(apply_IM(log))
-        params = [0.25, 0.5, 0.75, 1]
+
+        fit = fitness_alignment(log_org, model_im)
+        prec = precision_alignment_tree(log_org, model_im)
+        print(
+            f"Standard IM, NO CONSTRAINTS, Fitness is: {fit}; Precision: {prec}, Model: {model_im}"
+        )
+        model_prepruned = normalize_tree(apply_IM(log_c))
+
+        fit = fitness_alignment(log_org, model_prepruned)
+        prec = precision_alignment_tree(log_org, model_prepruned)
+        print(
+            f"Pre-Pruning Fitness is: {fit}; Precision: {prec}, Model: {model_prepruned}"
+        )
+        params = [1]
         for param in params:
             model_constrainted = normalize_tree(
-                apply_IM_with_rules(ex["log"], ex["rules"], rule_strictness=param)
+                apply_IM_with_rules(
+                    ex["log"],
+                    ex["rules"],
+                    rule_strictness=param,
+                    repair_mode=RepairVariant.TraceLevel,
+                )
             )
 
-            print(f"IM (no constraints): {model_im}")
-
-            print(f"RIM (rule_strictness = {param}): {model_constrainted}")
+            fit = fitness_alignment(
+                log_org,
+                model_constrainted,
+            )
+            prec = precision_alignment_tree(log_org, model_constrainted)
             print(
-                f"Semantic similarity with IM (no constraints) for (rule_strictness = {param}): {pm4py.behavioral_similarity(model_constrainted, model_im)}"
+                f"RIM (TL REPAIRS) Fitness is: {fit}; Precision: {prec}, Model: {model_constrainted}"
             )
-            """
-            net, im, fm = pm4py.convert_to_petri_net(model_im)
-            pm4py.view_petri_net(net, im, fm)
-            n_log = traces_to_log(ex["log"])
-            print(n_log)
-            print(f"Fitness: {pm4py.fitness_alignments(n_log, net, im, fm)}")
-            """
+            model_constrainted_el = normalize_tree(
+                apply_IM_with_rules(
+                    ex["log"],
+                    ex["rules"],
+                    rule_strictness=param,
+                    repair_mode=RepairVariant.EventLevel,
+                )
+            )
+            pm4py.view_process_tree(model_constrainted_el)
+
+            fit = fitness_alignment(log_org, model_constrainted_el)
+            prec = precision_alignment_tree(log_org, model_constrainted_el)
+            print(
+                f"RIM (EL REPAIRS) Fitness is: {fit}; Precision: {prec}, Model: {model_constrainted_el}"
+            )
+
             print("====================================")

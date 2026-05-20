@@ -18,7 +18,7 @@ class LogRepairMechanism(Enum):
 
 REPAIR_VARIANT = RepairVariant.EventLevel
 LOG_REPAIR_VARIANT = LogRepairMechanism.BinaryRepair
-SUPPORT_THRESHOLD = 0.5
+SUPPORT_THRESHOLD = 0
 
 
 def acts_of(log):
@@ -302,7 +302,12 @@ def event_level_repair(
         and len(new_rules) == len(original_rules)
     ):
         return None
-    return im_function(repaired_log, new_rules, rule_strictness=rule_strictness)
+    return im_function(
+        repaired_log,
+        new_rules,
+        rule_strictness=rule_strictness,
+        repair_mode=RepairVariant.EventLevel,
+    )
 
 
 def __trace_level_log_repair(
@@ -351,7 +356,12 @@ def trace_level_repair(
     ) or intersection is None:
         # No progress, continue trying
         return None
-    return im_function(intersection, new_rules, rule_strictness=rule_strictness)
+    return im_function(
+        intersection,
+        new_rules,
+        rule_strictness=rule_strictness,
+        repair_mode=RepairVariant.TraceLevel,
+    )
 
 
 def repair_mechanism(
@@ -360,15 +370,15 @@ def repair_mechanism(
     im_function: Callable,
     original_rules: List[AbstractRule],
     rule_strictness: int = 1,
-    mode: RepairVariant = REPAIR_VARIANT,
+    repair_mode: RepairVariant = REPAIR_VARIANT,
 ):
-    if mode == RepairVariant.EventLevel:
+    if repair_mode == RepairVariant.EventLevel:
         return event_level_repair(
             log, unsat_rules, im_function, original_rules, rule_strictness
         )
-    elif mode == RepairVariant.TraceLevel:
+    elif repair_mode == RepairVariant.TraceLevel:
         return trace_level_repair(
             log, unsat_rules, im_function, original_rules, rule_strictness
         )
     else:
-        raise Exception(f"Unknown repair mode: {mode}")
+        raise Exception(f"Unknown repair mode: {repair_mode}")

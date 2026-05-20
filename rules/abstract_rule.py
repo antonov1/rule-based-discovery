@@ -36,6 +36,10 @@ class AbstractRule(ABC):
     def repair(self, data: List[Any]) -> List:
         pass
 
+    @abstractmethod
+    def to_automaton(self, alphabet: set) -> Any:
+        pass
+
     def get_support(self):
         return self.sup
 

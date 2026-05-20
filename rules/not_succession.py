@@ -1,5 +1,6 @@
-from typing import Any, List
+from typing import Any, List, Set
 
+from automata.fa.dfa import DFA
 from rules.abstract_rule import AbstractRule
 
 
@@ -7,6 +8,10 @@ class NotSuccessionRule(AbstractRule):
     "This rule states that the activity B does not follow the activity A."
 
     def __init__(self, activity_a: str, activity_b: str) -> None:
+        if activity_a == activity_b:
+            raise ValueError(
+                "Activity A and B must be different for a not succession rule. Use AtMost1 instead."
+            )
         super().__init__([activity_a, activity_b])
         self.description = (
             "This rule states that the activity B does not follow the activity A."
@@ -76,3 +81,31 @@ class NotSuccessionRule(AbstractRule):
                 count_a_not_followed_by_b += 1
         self.conf = count_a_not_followed_by_b / count_a
         return self.conf
+
+    def to_automaton(self, alphabet: Set[str]) -> DFA:
+        act_a = self.activity_a
+        act_b = self.activity_b
+
+        if act_a not in alphabet:
+            raise ValueError(f"activity_a {act_a!r} is not in alphabet {alphabet}")
+
+        if act_b not in alphabet:
+            raise ValueError(f"activity_b {act_b!r} is not in alphabet {alphabet}")
+
+        q0 = "q0"
+        q1 = "q1"
+        q2 = "q2"
+        transitions = {
+            q0: {symbol: q0 for symbol in alphabet if symbol != act_a},
+            q1: {symbol: q1 for symbol in alphabet if symbol != act_b},
+            q2: {symbol: q2 for symbol in alphabet},
+        }
+        transitions[q0][act_a] = q1
+        transitions[q1][act_b] = q2
+        return DFA(
+            states={q0, q1, q2},
+            input_symbols=set(alphabet),
+            transitions=transitions,
+            initial_state=q0,
+            final_states={q0, q1},
+        )

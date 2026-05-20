@@ -1,5 +1,6 @@
-from typing import Any, List
+from typing import Any, List, Set
 
+from automata.fa.dfa import DFA
 from rules.abstract_rule import AbstractRule
 
 
@@ -7,6 +8,8 @@ class ResponseRule(AbstractRule):
     "This rule states that if the first activity occurs, the second activity must eventually follow"
 
     def __init__(self, activity_a: str, activity_b: str) -> None:
+        if activity_a == activity_b:
+            raise ValueError("Activity A and B must be different for a response rule.")
         super().__init__([activity_a, activity_b])
         self.description = "This rule states that if the first activity occurs, the second activity must eventually follow."
         self.activity_a = activity_a
@@ -63,3 +66,42 @@ class ResponseRule(AbstractRule):
         count_ab = sum(1 for trace in self.apply(data) if self.activity_a in trace)
         self.conf = count_ab / count_a
         return self.conf
+
+    def to_automaton(self, alphabet: Set[str]) -> DFA:
+        act_a = self.activity_a
+        act_b = self.activity_b
+
+        if act_a not in alphabet:
+            raise ValueError(f"activity_a {act_a!r} is not in alphabet {alphabet}")
+
+        if act_b not in alphabet:
+            raise ValueError(f"activity_b {act_b!r} is not in alphabet {alphabet}")
+
+        q0 = "q0"
+        q1 = "q1"
+
+        transitions = {
+            q0: {},
+            q1: {},
+        }
+
+        for symbol in alphabet:
+            if symbol == act_a:
+                transitions[q0][symbol] = q1
+                transitions[q1][symbol] = q1
+
+            elif symbol == act_b:
+                transitions[q0][symbol] = q0
+                transitions[q1][symbol] = q0
+
+            else:
+                transitions[q0][symbol] = q0
+                transitions[q1][symbol] = q1
+
+        return DFA(
+            states={q0, q1},
+            input_symbols=set(alphabet),
+            transitions=transitions,
+            initial_state=q0,
+            final_states={q0},
+        )
