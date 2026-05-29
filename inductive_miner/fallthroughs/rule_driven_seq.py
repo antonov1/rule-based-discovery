@@ -38,6 +38,7 @@ def apply(
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
     repair_mode=RepairVariant.TraceLevel,
+    noise_threshold: float = 0,
     **kwargs,
 ) -> Optional[ProcessTree]:
     alphabet = set(dfg.nodes) - {"ArtificialNoneNode"}
@@ -48,7 +49,14 @@ def apply(
 
     violations = SequenceCut.check_rules(rules or [], groups)
     if violations:
-        repaired = repair_mechanism(log, violations, im_function, rules or [])
+        repaired = repair_mechanism(
+            log,
+            violations,
+            im_function,
+            rules or [],
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
+        )
         if repaired is not None:
             return repaired
         return None
@@ -63,6 +71,7 @@ def apply(
             im_function(
                 projections[i],
                 child_rules,
+                noise_threshold=noise_threshold,
             )
             if child_rules
             else im_function(projections[i])

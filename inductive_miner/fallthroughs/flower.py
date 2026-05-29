@@ -20,13 +20,13 @@ def apply(
     if rules:
         unsat_rules = LoopCut.check_rules(rules, groups)
         if unsat_rules:
-            print(f"Unsatisfied rules: {unsat_rules}")
             return repair_mechanism(
                 log,
                 unsat_rules,
                 im_function,
                 rules,
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
 
     parent = ProcessTree(operator=Operator.LOOP)
@@ -37,6 +37,7 @@ def apply(
             redo_log,
             proj_rules,
             repair_mode=repair_mode,
+            noise_threshold=kwargs.get("noise_threshold", 0.0),
         )
         if proj_rules
         else im_function(redo_log)

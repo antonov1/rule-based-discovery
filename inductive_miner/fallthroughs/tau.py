@@ -61,6 +61,7 @@ def apply(
                 im_function,
                 rules,
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
 
     parent = ProcessTree(operator=Operator.LOOP)
@@ -75,7 +76,12 @@ def apply(
     assert_rules_supported("In TAU (0):", sublog, proj_rules)
 
     do_child = (
-        im_function(sublog, proj_rules, repair_mode=repair_mode)
+        im_function(
+            sublog,
+            proj_rules,
+            repair_mode=repair_mode,
+            noise_threshold=kwargs.get("noise_threshold", 0.0),
+        )
         if proj_rules
         else im_function(sublog)
     )

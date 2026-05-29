@@ -76,9 +76,10 @@ def apply(
                 im_function,
                 rules,
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
     # Concurrent Cut (Parallel)
-    print(f"LOG IS: {log}, candidate is: {candidate}")
+    # print(f"LOG IS: {log}, candidate is: {candidate}")
     parent = ProcessTree(operator=Operator.PARALLEL)
     proj_rules = (
         ConcurrentCut.project_rules(
@@ -98,6 +99,7 @@ def apply(
                 projected_logs[0],
                 proj_rules[0],
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
             if proj_rules
             else im_function(projected_logs[0])
@@ -110,6 +112,7 @@ def apply(
                 projected_logs[1],
                 proj_rules[1],
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
             if proj_rules
             else im_function(projected_logs[1])

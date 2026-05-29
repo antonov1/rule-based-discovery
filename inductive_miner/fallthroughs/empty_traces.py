@@ -42,6 +42,7 @@ def apply(
                 im_function,
                 rules,
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
     parent = ProcessTree(operator=Operator.XOR)
     tau_child = ProcessTree()
@@ -52,7 +53,12 @@ def apply(
         proj_rules = ExclusiveChoiceCut.project_rules(
             rules, [set(), set(act for trace in log for act in trace)]
         )[1]
-        non_tau_child = im_function(sublog, proj_rules, repair_mode=repair_mode)
+        non_tau_child = im_function(
+            sublog,
+            proj_rules,
+            repair_mode=repair_mode,
+            noise_threshold=kwargs.get("noise_threshold", 0.0),
+        )
     else:
         non_tau_child = im_function(sublog)
 

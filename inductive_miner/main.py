@@ -44,6 +44,7 @@ def handle_empty_traces(
     im_function,
     rules: List[AbstractRule] = None,
     repair_mode=RepairVariant.TraceLevel,
+    noise_threshold=0.0,
 ):
     if any(len(trace) == 0 for trace in log):
         # Remove empty traces from the log
@@ -55,7 +56,12 @@ def handle_empty_traces(
             unsat_rules = ExclusiveChoiceCut.check_rules(rules, groups)
             if unsat_rules:
                 return repair_mechanism(
-                    log, unsat_rules, im_function, rules, repair_mode
+                    log,
+                    unsat_rules,
+                    im_function,
+                    rules,
+                    repair_mode,
+                    noise_threshold=noise_threshold,
                 )
 
         if not non_empty_log:
@@ -64,7 +70,12 @@ def handle_empty_traces(
         # Recursively mine the non-empty part and wrap in XOR
 
         subtree = (
-            im_function(non_empty_log, rules)
+            im_function(
+                non_empty_log,
+                rules,
+                noise_threshold=noise_threshold,
+                repair_mode=repair_mode,
+            )
             if rules is not None
             else im_function(non_empty_log)
         )
@@ -105,6 +116,7 @@ def traces_to_log(
 def apply_BIM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
+    noise_threshold: float = 0.0,
     activity_key="concept:name",
     case_key="case:concept:name",
 ):
@@ -126,6 +138,11 @@ def apply_BIM_with_rules(
 
     dfg = DirectlyFollowsGraph(log)
     dfg_graph = dfg.graph
+    dfg_graph = (
+        DirectlyFollowsGraph.filter(threshold=noise_threshold, dfg=dfg_graph)
+        if noise_threshold > 0
+        else dfg_graph
+    )
 
     # Try to apply the cuts in order of precedence
     cut_classes = [
@@ -278,7 +295,11 @@ def apply_IM_with_rules(
     activity_key="concept:name",
     case_key="case:concept:name",
     repair_mode=RepairVariant.TraceLevel,
+    noise_threshold: float = 0,
 ):
+    print(
+        f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
+    )
     # print(f"Rules are: {rules}")
     # print(f"Log is: {log}")
     # First, we can apply the rules to filter the log
@@ -303,6 +324,12 @@ def apply_IM_with_rules(
 
     dfg = DirectlyFollowsGraph(log)
     dfg_graph = dfg.graph
+    dfg_graph = (
+        DirectlyFollowsGraph.filter(threshold=noise_threshold, dfg=dfg_graph)
+        if noise_threshold > 0
+        else dfg_graph
+    )
+    # show them to compare
 
     # Try to apply the cuts in order of precedence
     cut_classes = [ExclusiveChoiceCut, StrictSequenceCut, ConcurrentCut, LoopCut]
@@ -314,8 +341,8 @@ def apply_IM_with_rules(
         apply_IM_with_rules,
         rules=rules,
         repair_mode=repair_mode,
+        noise_threshold=noise_threshold,
     )
-    # print(f"Log is: {log}")
     if empty_traces is not None:
         return empty_traces
 
@@ -350,6 +377,7 @@ def apply_IM_with_rules(
                     apply_IM_with_rules,
                     rules,
                     repair_mode,
+                    noise_threshold=noise_threshold,
                 )
                 if ENABLE_PRINTS:
                     print(
@@ -377,6 +405,7 @@ def apply_IM_with_rules(
                     activity_key=activity_key,
                     case_key=case_key,
                     repair_mode=repair_mode,
+                    noise_threshold=noise_threshold,
                 )
                 add_child(process_tree, child_node)
             if ENABLE_PRINTS:
@@ -433,6 +462,7 @@ def apply_IM_with_rules(
             im_function=apply_IM_with_rules,
             rules=rules,
             repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
         )
         if res:
             if ENABLE_PRINTS:
@@ -694,17 +724,20 @@ if __name__ == "__main__":
         ResponseRule("ER Sepsis Triage", "LacticAcid"),
         ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
         InitializationRule("ER Registration"),
-        NotCoExistenceRule("Admission NC", "Release A"),
+        NotSuccessionRule("Admission NC", "Release A"),
     ]
-
+    rules = [
+        ChainResponseRule("ER Registration", "ER Triage"),
+        InitializationRule("ER Registration"),
+        AtMostOnceRule("ER Registration"),
+        ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
+    ]
     log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log = pm4py.convert_to_dataframe(log)
     log_org = log.copy()
 
-    log = preprocess_log(log)
-    for r in rules:
-        log = r.apply(log)
-    model = apply_IM(log)
+    model = apply_IM_with_rules(log, rules=rules, noise_threshold=0.95)
+    pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
