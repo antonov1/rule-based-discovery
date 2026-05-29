@@ -74,6 +74,7 @@ def apply(
                 im_function,
                 rules,
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             )
 
     # Binary split
@@ -93,6 +94,7 @@ def apply(
                 sublogs[0],
                 proj_rules[0],
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             ),
         )
         add_child(
@@ -101,6 +103,7 @@ def apply(
                 sublogs[1],
                 proj_rules[1],
                 repair_mode=repair_mode,
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
             ),
         )
     else:

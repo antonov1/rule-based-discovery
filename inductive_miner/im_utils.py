@@ -237,6 +237,7 @@ def event_level_repair(
     unsat_rules: List[AbstractRule],
     im_function: Callable,
     original_rules: List[AbstractRule],
+    noise_threshold: float = 0.0,
 ):
     original_event_count = sum(len(trace) for trace in log)
     num_traces_orig = len(log)
@@ -259,6 +260,7 @@ def event_level_repair(
         repaired_log,
         new_rules,
         repair_mode=RepairVariant.EventLevel,
+        noise_threshold=noise_threshold,
     )
 
 
@@ -278,6 +280,7 @@ def trace_level_repair(
     unsat_rules: List[AbstractRule],
     im_function: Callable,
     original_rules: List[AbstractRule],
+    noise_threshold: float = 0.0,
 ):
     intersection = __trace_level_log_repair(log, unsat_rules)
     new_rules = supported_rules(intersection, original_rules)
@@ -291,6 +294,7 @@ def trace_level_repair(
         intersection,
         new_rules,
         repair_mode=RepairVariant.TraceLevel,
+        noise_threshold=noise_threshold,
     )
 
 
@@ -300,10 +304,15 @@ def repair_mechanism(
     im_function: Callable,
     original_rules: List[AbstractRule],
     repair_mode: RepairVariant = REPAIR_VARIANT,
+    noise_threshold: float = 0.0,
 ):
     if repair_mode == RepairVariant.EventLevel:
-        return event_level_repair(log, unsat_rules, im_function, original_rules)
+        return event_level_repair(
+            log, unsat_rules, im_function, original_rules, noise_threshold
+        )
     elif repair_mode == RepairVariant.TraceLevel:
-        return trace_level_repair(log, unsat_rules, im_function, original_rules)
+        return trace_level_repair(
+            log, unsat_rules, im_function, original_rules, noise_threshold
+        )
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")

@@ -44,7 +44,6 @@ class LoopCut(BaseCut):
                 isinstance(rule, CoExistenceRule)
                 or isinstance(rule, ResponseRule)
                 or isinstance(rule, ChainResponseRule)
-                or isinstance(rule, NotCoExistenceRule)
             ):
                 # In response, we have <x,y,x> obvious violation so they should appear together in the same group
                 group_a = next(
@@ -66,7 +65,9 @@ class LoopCut(BaseCut):
                 if rule.activity_a in groups[0] and any(rule.activity_b in group_rest):
                     unsat_rules.append(rule)
 
-            elif isinstance(rule, NotSuccessionRule):
+            elif isinstance(rule, NotSuccessionRule) or isinstance(
+                rule, NotCoExistenceRule
+            ):
                 # regardless what you do, that's gonna be unsatisfied
                 unsat_rules.append(rule)
         return unsat_rules
