@@ -8,7 +8,6 @@ def apply(
     im_function,
     log,
     rules=None,
-    rule_strictness=1,
     repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> ProcessTree:
@@ -20,15 +19,13 @@ def apply(
 
     if rules:
         unsat_rules = LoopCut.check_rules(rules, groups)
-        rule_conf = 1 - len(unsat_rules) / len(rules) if rules else 1
-        if rule_conf < rule_strictness:
-            print(f"Unsatisfied rules: {unsat_rules}, rule confidence: {rule_conf}")
+        if unsat_rules:
+            print(f"Unsatisfied rules: {unsat_rules}")
             return repair_mechanism(
                 log,
                 unsat_rules,
                 im_function,
                 rules,
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
 
@@ -39,7 +36,6 @@ def apply(
         im_function(
             redo_log,
             proj_rules,
-            rule_strictness=rule_strictness,
             repair_mode=repair_mode,
         )
         if proj_rules
