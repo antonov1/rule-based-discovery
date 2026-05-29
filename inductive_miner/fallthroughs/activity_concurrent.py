@@ -57,7 +57,6 @@ def apply(
     log: List[List[str]],
     cut_order: List[type],
     rules: List[AbstractRule] = None,
-    rule_strictness=1,
     repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
@@ -68,14 +67,12 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
-        rule_conf = 1 - len(unsat_rules) / len(rules)
-        if rule_conf < rule_strictness:
+        if unsat_rules:
             return repair_mechanism(
                 log,
                 unsat_rules,
                 im_function,
                 rules,
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
 
@@ -95,7 +92,6 @@ def apply(
             im_function(
                 sublogs[0],
                 proj_rules[0],
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             ),
         )
@@ -104,7 +100,6 @@ def apply(
             im_function(
                 sublogs[1],
                 proj_rules[1],
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             ),
         )

@@ -17,8 +17,6 @@ class LogRepairMechanism(Enum):
 
 
 REPAIR_VARIANT = RepairVariant.EventLevel
-LOG_REPAIR_VARIANT = LogRepairMechanism.BinaryRepair
-SUPPORT_THRESHOLD = 0
 
 
 def acts_of(log):
@@ -114,7 +112,6 @@ def base_cases(
     dfg_graph,
     im_function: Callable = None,
     rules: List[AbstractRule] = None,
-    rule_strictness: float = 1,
     **kwargs,
 ):
     """
@@ -137,9 +134,7 @@ def base_cases(
         return process_tree
 
     if len(nodes) == 1:
-        return _build_single_activity_tree(
-            log, dfg_graph, nodes, im_function, rules, rule_strictness=rule_strictness
-        )
+        return _build_single_activity_tree(log, dfg_graph, nodes, im_function, rules)
 
     raise Exception(
         f"Base case error: log has multiple activities but no cut was found."
@@ -147,7 +142,7 @@ def base_cases(
 
 
 def _build_single_activity_tree(
-    log, dfg_graph, nodes, im_function, rules, rule_strictness
+    log, dfg_graph, nodes, im_function, rules
 ) -> ProcessTree:
     if not nodes:
         return ProcessTree()  # Tau
@@ -163,14 +158,12 @@ def _build_single_activity_tree(
             group_0 = set()
             group_1 = set(activity)
             unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
-            rule_conf = 1 - len(unsat_rules) / len(rules)
-            if rule_conf < rule_strictness:
+            if unsat_rules:
                 return repair_mechanism(
                     log,
                     unsat_rules,
                     im_function,
                     rules,
-                    rule_strictness=rule_strictness,
                 )
 
         return _build_loop_tree(do_first=None, redo=activity)
@@ -178,12 +171,9 @@ def _build_single_activity_tree(
         group_0 = set(activity)
         group_1 = set()
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
-        rule_conf = 1 - len(unsat_rules) / len(rules)
 
-        if rule_conf < rule_strictness:
-            return repair_mechanism(
-                log, unsat_rules, im_function, rules, rule_strictness=rule_strictness
-            )
+        if unsat_rules:
+            return repair_mechanism(log, unsat_rules, im_function, rules)
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -218,49 +208,13 @@ def supported_rules(log, rules):
         elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
             if rule.activity_a in acts and rule.activity_b in acts:
                 filtered.append(rule)
-    # return only rules with sup > 0
-    rules_to_keep = []
-    for rule in filtered:
-        try:
-            sup = rule.calc_support(log)
-        except:
-            sup = rule.calc_support()
-        if sup >= SUPPORT_THRESHOLD:
-            rules_to_keep.append(rule)
-    return rules_to_keep
+    return filtered
 
 
 def __event_based_log_repair(
     log,
     unsat_rules: List[AbstractRule],
-    version: LogRepairMechanism = LOG_REPAIR_VARIANT,
 ):
-    unsat_rules_list = {}
-    # sort the rules by support and confidence
-    # then repair minimal number of rules
-
-    for rule in unsat_rules:
-        rule.apply(log)
-        try:
-            sup = rule.calc_support(log)
-        except:
-            sup = rule.calc_support()
-        try:
-            conf = rule.calc_confidence(log)
-        except:
-            conf = rule.calc_confidence()
-        unsat_rules_list.update({rule: (sup, conf)})
-    sorted_rule_stats = sorted(
-        unsat_rules_list.items(),
-        key=lambda item: (item[1][0], item[1][1]),
-        reverse=True,
-    )
-    unsat_rules = (
-        [rule for rule, (sup, _) in sorted_rule_stats if sup >= SUPPORT_THRESHOLD]
-        if version == LogRepairMechanism.SupportRepair
-        else [rule for rule, (sup, _) in sorted_rule_stats if sup > 0]
-    )
-
     repaired_log = log
     for i in range(len(unsat_rules)):
         rule = unsat_rules[i]
@@ -283,11 +237,10 @@ def event_level_repair(
     unsat_rules: List[AbstractRule],
     im_function: Callable,
     original_rules: List[AbstractRule],
-    rule_strictness: float = 1,
 ):
     original_event_count = sum(len(trace) for trace in log)
     num_traces_orig = len(log)
-    repaired_log = __event_based_log_repair(log, unsat_rules, LOG_REPAIR_VARIANT)
+    repaired_log = __event_based_log_repair(log, unsat_rules)
 
     if not repaired_log:
         # repair failed
@@ -305,7 +258,6 @@ def event_level_repair(
     return im_function(
         repaired_log,
         new_rules,
-        rule_strictness=rule_strictness,
         repair_mode=RepairVariant.EventLevel,
     )
 
@@ -313,27 +265,7 @@ def event_level_repair(
 def __trace_level_log_repair(
     log,
     unsat_rules: List[AbstractRule],
-    version: LogRepairMechanism = LOG_REPAIR_VARIANT,
 ):
-    unsat_rules_list = {}
-    for rule in unsat_rules:
-        rule.apply(log)
-        sup = rule.calc_support()
-        try:
-            conf = rule.calc_confidence(log)
-        except:
-            conf = rule.calc_confidence()
-        unsat_rules_list.update({rule: (sup, conf)})
-    sorted_rule_stats = sorted(
-        unsat_rules_list.items(),
-        key=lambda item: (item[1][0], item[1][1]),
-        reverse=True,
-    )
-    unsat_rules = (
-        [rule for rule, (sup, _) in sorted_rule_stats if sup >= SUPPORT_THRESHOLD]
-        if version == LogRepairMechanism.SupportRepair
-        else [rule for rule, (sup, _) in sorted_rule_stats if sup >= 0]
-    )
     intersection = log.copy()
     for i in range(len(unsat_rules)):
         rule = unsat_rules[i]
@@ -346,9 +278,8 @@ def trace_level_repair(
     unsat_rules: List[AbstractRule],
     im_function: Callable,
     original_rules: List[AbstractRule],
-    rule_strictness: float = 1,
 ):
-    intersection = __trace_level_log_repair(log, unsat_rules, LOG_REPAIR_VARIANT)
+    intersection = __trace_level_log_repair(log, unsat_rules)
     new_rules = supported_rules(intersection, original_rules)
 
     if (
@@ -359,7 +290,6 @@ def trace_level_repair(
     return im_function(
         intersection,
         new_rules,
-        rule_strictness=rule_strictness,
         repair_mode=RepairVariant.TraceLevel,
     )
 
@@ -369,16 +299,11 @@ def repair_mechanism(
     unsat_rules: List[AbstractRule],
     im_function: Callable,
     original_rules: List[AbstractRule],
-    rule_strictness: int = 1,
     repair_mode: RepairVariant = REPAIR_VARIANT,
 ):
     if repair_mode == RepairVariant.EventLevel:
-        return event_level_repair(
-            log, unsat_rules, im_function, original_rules, rule_strictness
-        )
+        return event_level_repair(log, unsat_rules, im_function, original_rules)
     elif repair_mode == RepairVariant.TraceLevel:
-        return trace_level_repair(
-            log, unsat_rules, im_function, original_rules, rule_strictness
-        )
+        return trace_level_repair(log, unsat_rules, im_function, original_rules)
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")

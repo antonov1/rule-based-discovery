@@ -42,7 +42,6 @@ def apply(
     dfg: nx.DiGraph,
     start_activities: Set[str],
     rules: List[AbstractRule] = None,
-    rule_strictness=1,
     repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
@@ -55,14 +54,12 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace}
         unsat_rules = LoopCut.check_rules(rules, [set(), acts])
-        rule_conf = 1 - len(unsat_rules) / len(rules)
-        if rule_conf < rule_strictness:
+        if unsat_rules:
             return repair_mechanism(
                 log,
                 unsat_rules,
                 im_function,
                 rules,
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
 
@@ -78,9 +75,7 @@ def apply(
     assert_rules_supported("In TAU (0):", sublog, proj_rules)
 
     do_child = (
-        im_function(
-            sublog, proj_rules, rule_strictness=rule_strictness, repair_mode=repair_mode
-        )
+        im_function(sublog, proj_rules, repair_mode=repair_mode)
         if proj_rules
         else im_function(sublog)
     )

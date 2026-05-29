@@ -47,9 +47,9 @@ class ConcurrentCut(BaseCut):
                     (group for group in groups if rule.activity_b in group), None
                 )
                 if group_a is not None and group_b is not None and group_a != group_b:
-                    print(
-                        f"Rule {rule} is not satisfied by the concurrent cut with groups {groups}"
-                    )
+                    # print(
+                    #    f"Rule {rule} is not satisfied by the concurrent cut with groups {groups}"
+                    # )
                     unsat_rules.append(rule)
         return unsat_rules
 
