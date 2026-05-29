@@ -134,15 +134,15 @@ def apply(model: ProcessTree, rules: List[AbstractRule]):
     playout = preprocess_log(playout)
     unsat_rules = []
     playout_set = {tuple(trace) for trace in playout}
-    acts = {act for trace in playout for act in trace}
+    {act for trace in playout for act in trace}
     for rule in rules:
         sat = rule.apply(playout)
         sat_set = {tuple(trace) for trace in sat}
         bad = playout_set - sat_set
         if bad:
             unsat_rules.append(rule)
-            print(
-                f"Rule {rule} is not satisfied, the event log has the following activities: {acts}. Counterexamples: {bad}"
-            )
+            # print(
+            #    f"Rule {rule} is not satisfied, the event log has the following activities: {acts}. Counterexamples: {bad}"
+            # )
     val = 1 - len(unsat_rules) / len(rules) if rules else 1
     return val, unsat_rules

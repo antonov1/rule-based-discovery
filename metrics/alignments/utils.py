@@ -1,7 +1,7 @@
 import math
 
 import pandas as pd
-from pm4py import discover_process_tree_inductive, ProcessTree
+from pm4py import discover_process_tree_inductive
 from pm4py.objects.log.obj import Event, EventLog, Trace
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from pm4py.objects.process_tree.utils.generic import get_leaves

@@ -1,8 +1,9 @@
 from rules import *
 from inductive_miner.main import *
-from inductive_miner.im_utils import RepairVariant
+from inductive_miner.im_utils import normalize_tree, RepairVariant
 from metrics.fitness import fitness_alignment
 from metrics.precision import precision_alignment_tree
+from metrics.rule_conformance import conformance
 
 if __name__ == "__main__":
     examples = [
@@ -300,9 +301,17 @@ if __name__ == "__main__":
                 "a stricter decomposition that removes the optional C pattern or collapses the branch to A->B."
             ),
         },
+        {
+            "name": "26. NotSuccession violated by IM's generalization capabilities",
+            "log": [["A", "B"], ["B", "C"]],
+            "rules": [NotSuccessionRule("A", "C")],
+            "why": (
+                "The log contains A followed by B, and B followed by C, which may lead IM to generalize and allow A followed by C",
+            ),
+        },
     ]
     global REPAIR_VARIANT
-    for ex in examples[24:25]:
+    for ex in examples:
         print(f"\n--- {ex['name']} ---")
         print("Log:", ex["log"])
         print("Rules:", ex["rules"])
@@ -310,55 +319,57 @@ if __name__ == "__main__":
         log = ex["log"]
         log_org = traces_to_log(log)
         log_c = log.copy()
+        alphabet = {e for trace in log for e in trace}
         for r in ex["rules"]:
             log_c = r.apply(log_c)
         model_im = normalize_tree(apply_IM(log))
 
         fit = fitness_alignment(log_org, model_im)
         prec = precision_alignment_tree(log_org, model_im)
+        rule_conf = conformance(model_im, ex["rules"], alphabet)[0]
         print(
-            f"Standard IM, NO CONSTRAINTS, Fitness is: {fit}; Precision: {prec}, Model: {model_im}"
+            f"Standard IM, NO CONSTRAINTS, Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_im}"
         )
         model_prepruned = normalize_tree(apply_IM(log_c))
 
         fit = fitness_alignment(log_org, model_prepruned)
         prec = precision_alignment_tree(log_org, model_prepruned)
+        rule_conf = conformance(model_prepruned, ex["rules"], alphabet)[0]
+
         print(
-            f"Pre-Pruning Fitness is: {fit}; Precision: {prec}, Model: {model_prepruned}"
+            f"Pre-Pruning Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_prepruned}"
         )
-        params = [1]
-        for param in params:
-            model_constrainted = normalize_tree(
-                apply_IM_with_rules(
-                    ex["log"],
-                    ex["rules"],
-                    rule_strictness=param,
-                    repair_mode=RepairVariant.TraceLevel,
-                )
+        model_constrainted = normalize_tree(
+            apply_IM_with_rules(
+                ex["log"],
+                ex["rules"],
+                repair_mode=RepairVariant.TraceLevel,
             )
+        )
 
-            fit = fitness_alignment(
-                log_org,
-                model_constrainted,
-            )
-            prec = precision_alignment_tree(log_org, model_constrainted)
-            print(
-                f"RIM (TL REPAIRS) Fitness is: {fit}; Precision: {prec}, Model: {model_constrainted}"
-            )
-            model_constrainted_el = normalize_tree(
-                apply_IM_with_rules(
-                    ex["log"],
-                    ex["rules"],
-                    rule_strictness=param,
-                    repair_mode=RepairVariant.EventLevel,
-                )
-            )
-            pm4py.view_process_tree(model_constrainted_el)
+        fit = fitness_alignment(
+            log_org,
+            model_constrainted,
+        )
+        prec = precision_alignment_tree(log_org, model_constrainted)
+        rule_conf = conformance(model_constrainted, ex["rules"], alphabet)[0]
 
-            fit = fitness_alignment(log_org, model_constrainted_el)
-            prec = precision_alignment_tree(log_org, model_constrainted_el)
-            print(
-                f"RIM (EL REPAIRS) Fitness is: {fit}; Precision: {prec}, Model: {model_constrainted_el}"
+        print(
+            f"RIM (TL REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted}"
+        )
+        model_constrainted_el = normalize_tree(
+            apply_IM_with_rules(
+                ex["log"],
+                ex["rules"],
+                repair_mode=RepairVariant.EventLevel,
             )
+        )
+        rule_conf = conformance(model_constrainted_el, ex["rules"], alphabet)[0]
 
-            print("====================================")
+        fit = fitness_alignment(log_org, model_constrainted_el)
+        prec = precision_alignment_tree(log_org, model_constrainted_el)
+        print(
+            f"RIM (EL REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_el}"
+        )
+
+        print("====================================")

@@ -54,7 +54,6 @@ def apply(
     log: List[List[str]],
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
-    rule_strictness=1,
     repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ):
@@ -69,15 +68,13 @@ def apply(
     if rules:
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
-        rule_conf = 1 - len(unsat_rules) / len(rules)
-        if rule_conf < rule_strictness:
+        if unsat_rules:
 
             return repair_mechanism(
                 log,
                 unsat_rules,
                 im_function,
                 rules,
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
     # Concurrent Cut (Parallel)
@@ -100,7 +97,6 @@ def apply(
             im_function(
                 projected_logs[0],
                 proj_rules[0],
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
             if proj_rules
@@ -113,7 +109,6 @@ def apply(
             im_function(
                 projected_logs[1],
                 proj_rules[1],
-                rule_strictness=rule_strictness,
                 repair_mode=repair_mode,
             )
             if proj_rules
