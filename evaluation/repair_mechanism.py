@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 import pandas as pd
 import pm4py
-from inductive_miner.im_utils import RepairVariant
+from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import (
     apply_IM,
     apply_IM_with_rules,
@@ -97,7 +97,7 @@ def evaluate():
         try:
             with time_limit(300):
                 print(f"Trial {i}: discovering prepruned model")
-                model_prepruned = apply_IM(log_org)
+                model_prepruned = normalize_tree(apply_IM(log_org))
                 fitness_prepruned = fitness_alignment(log, model_prepruned)
                 precision_prepruned = precision_alignment_tree(log, model_prepruned)
                 conformance_prepruned = conformance(
@@ -105,24 +105,30 @@ def evaluate():
                 )
 
                 print(f"Trial {i}: trace-level model")
-                model_trace = apply_IM_with_rules(
-                    log, rules=sampled_rules, repair_mode=RepairVariant.TraceLevel
+                model_trace = normalize_tree(
+                    apply_IM_with_rules(
+                        log, rules=sampled_rules, repair_mode=RepairVariant.TraceLevel
+                    )
                 )
                 fitness_trace = fitness_alignment(log, model_trace)
                 precision_trace = precision_alignment_tree(log, model_trace)
                 conformance_trace = conformance(model_trace, sampled_rules, alphabet)
 
                 print(f"Trial {i}: event-level model")
-                model_event = apply_IM_with_rules(
-                    log, rules=sampled_rules, repair_mode=RepairVariant.EventLevel
+                model_event = normalize_tree(
+                    apply_IM_with_rules(
+                        log, rules=sampled_rules, repair_mode=RepairVariant.EventLevel
+                    )
                 )
                 fitness_event = fitness_alignment(log, model_event)
                 precision_event = precision_alignment_tree(log, model_event)
                 conformance_event = conformance(model_event, sampled_rules, alphabet)
 
                 print(f"Trial {i}: edit-distance model")
-                model_edit = apply_IM_with_rules(
-                    log, rules=sampled_rules, repair_mode=RepairVariant.EditDistance
+                model_edit = normalize_tree(
+                    apply_IM_with_rules(
+                        log, rules=sampled_rules, repair_mode=RepairVariant.EditDistance
+                    )
                 )
                 fitness_edit = fitness_alignment(log, model_edit)
                 precision_edit = precision_alignment_tree(log, model_edit)

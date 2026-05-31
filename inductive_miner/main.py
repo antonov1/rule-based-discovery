@@ -732,11 +732,22 @@ if __name__ == "__main__":
         AtMostOnceRule("ER Registration"),
         ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
     ]
-    log = pm4py.read_xes("./inductive_miner/sepsis.xes")
+    rules = [
+        PrecedenceRule("n", "s"),
+        RespondedExistenceRule("j", "f"),
+        ResponseRule("u", "y"),
+        PrecedenceRule("i", "t"),
+    ]
+    log = pm4py.read_xes("./inductive_miner/log_18.xes", variant="iterparse")
+    # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
+    log["time:timestamp"] = pd.to_datetime(
+        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
+    )
     log = pm4py.convert_to_dataframe(log)
+
     log_org = log.copy()
 
-    model = apply_IM_with_rules(log, rules=rules, noise_threshold=0.2)
+    model = apply_IM_with_rules(log, rules=rules, repair_mode=RepairVariant.TraceLevel)
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)
