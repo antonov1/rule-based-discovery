@@ -294,12 +294,12 @@ def apply_IM_with_rules(
     rules: List[AbstractRule] = [],
     activity_key="concept:name",
     case_key="case:concept:name",
-    repair_mode=RepairVariant.TraceLevel,
+    repair_mode=RepairVariant.EditDistance,
     noise_threshold: float = 0,
 ):
-    print(
-        f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
-    )
+    # print(
+    #   f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
+    # )
     # print(f"Rules are: {rules}")
     # print(f"Log is: {log}")
     # First, we can apply the rules to filter the log
@@ -736,7 +736,7 @@ if __name__ == "__main__":
     log = pm4py.convert_to_dataframe(log)
     log_org = log.copy()
 
-    model = apply_IM_with_rules(log, rules=rules, noise_threshold=0.95)
+    model = apply_IM_with_rules(log, rules=rules, noise_threshold=0.2)
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)

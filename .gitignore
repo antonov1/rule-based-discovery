@@ -252,3 +252,5 @@ __pycache__/
 
 # MacOS
 .DS_STORE
+
+*.txt

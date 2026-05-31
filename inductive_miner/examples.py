@@ -371,5 +371,19 @@ if __name__ == "__main__":
         print(
             f"RIM (EL REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_el}"
         )
+        model_constrainted_ed = normalize_tree(
+            apply_IM_with_rules(
+                ex["log"],
+                ex["rules"],
+                repair_mode=RepairVariant.EditDistance,
+            )
+        )
+        rule_conf = conformance(model_constrainted_ed, ex["rules"], alphabet)[0]
+
+        fit = fitness_alignment(log_org, model_constrainted_ed)
+        prec = precision_alignment_tree(log_org, model_constrainted_ed)
+        print(
+            f"RIM (ED REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_ed}"
+        )
 
         print("====================================")
