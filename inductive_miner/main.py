@@ -294,12 +294,12 @@ def apply_IM_with_rules(
     rules: List[AbstractRule] = [],
     activity_key="concept:name",
     case_key="case:concept:name",
-    repair_mode=RepairVariant.TraceLevel,
+    repair_mode=RepairVariant.EditDistance,
     noise_threshold: float = 0,
 ):
-    print(
-        f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
-    )
+    # print(
+    #   f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
+    # )
     # print(f"Rules are: {rules}")
     # print(f"Log is: {log}")
     # First, we can apply the rules to filter the log
@@ -732,11 +732,30 @@ if __name__ == "__main__":
         AtMostOnceRule("ER Registration"),
         ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
     ]
-    log = pm4py.read_xes("./inductive_miner/sepsis.xes")
+    rules = [
+        RespondedExistenceRule("h", "a"),
+        ResponseRule("k", "h"),
+        RespondedExistenceRule("f", "p"),
+        AtMostOnceRule("l"),
+        RespondedExistenceRule("a", "t"),
+        PrecedenceRule("t", "o"),
+        RespondedExistenceRule("l", "p"),
+        RespondedExistenceRule("b", "j"),
+        ChainPrecedenceRule("i", "c"),
+        RespondedExistenceRule("i", "t"),
+    ]
+    log = pm4py.read_xes("./inductive_miner/log_41.xes", variant="iterparse")
+    # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
+    log["time:timestamp"] = pd.to_datetime(
+        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
+    )
     log = pm4py.convert_to_dataframe(log)
+
     log_org = log.copy()
 
-    model = apply_IM_with_rules(log, rules=rules, noise_threshold=0.95)
+    model = apply_IM_with_rules(
+        log, rules=rules, repair_mode=RepairVariant.EditDistance
+    )
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)

@@ -58,11 +58,29 @@ class LoopCut(BaseCut):
                 rule, ChainPrecedenceRule
             ):
                 # We have to check if b is in the do part and a is in the redo part
-                if rule.activity_b in groups[0] and any(rule.activity_a in group_rest):
+                print(
+                    "Checking rule ",
+                    rule,
+                    " with groups ",
+                    groups,
+                    " group rest ",
+                    group_rest,
+                )
+                print(
+                    "Rule activity a ",
+                    rule.activity_a,
+                    " rule activity b ",
+                    rule.activity_b,
+                )
+                if rule.activity_b in groups[0] and any(
+                    rule.activity_a in group for group in group_rest
+                ):
                     unsat_rules.append(rule)
             elif isinstance(rule, RespondedExistenceRule):
                 # We have to check if b is in the do part and a is in the redo part
-                if rule.activity_a in groups[0] and any(rule.activity_b in group_rest):
+                if rule.activity_a in groups[0] and any(
+                    rule.activity_b in group for group in group_rest
+                ):
                     unsat_rules.append(rule)
 
             elif isinstance(rule, NotSuccessionRule) or isinstance(

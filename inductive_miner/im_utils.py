@@ -1,3 +1,4 @@
+import time
 from enum import Enum
 from typing import Callable, List
 
@@ -9,14 +10,10 @@ from rules import AbstractRule, EndRule, ExistenceRule, InitializationRule
 class RepairVariant(Enum):
     EventLevel = "event_level"
     TraceLevel = "trace_level"
+    EditDistance = "edit_distance"
 
 
-class LogRepairMechanism(Enum):
-    BinaryRepair = "binary"
-    SupportRepair = "support"
-
-
-REPAIR_VARIANT = RepairVariant.EventLevel
+REPAIR_VARIANT = RepairVariant.EditDistance
 
 
 def acts_of(log):
@@ -307,12 +304,282 @@ def repair_mechanism(
     noise_threshold: float = 0.0,
 ):
     if repair_mode == RepairVariant.EventLevel:
-        return event_level_repair(
+        start = time.perf_counter()
+
+        repair = event_level_repair(
             log, unsat_rules, im_function, original_rules, noise_threshold
         )
+
+        elapsed = time.perf_counter() - start
+
+        with open("repair_timings_event_level.txt", "a") as f:
+            f.write(f"{elapsed:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
+        return repair
+
     elif repair_mode == RepairVariant.TraceLevel:
-        return trace_level_repair(
+        start = time.perf_counter()
+        repair = trace_level_repair(
             log, unsat_rules, im_function, original_rules, noise_threshold
         )
+        end = time.perf_counter() - start
+        with open("repair_timings_trace_level.txt", "a") as f:
+            f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
+        return repair
+    elif repair_mode == RepairVariant.EditDistance:
+        start = time.perf_counter()
+        repair = apply_edit_distance_repair(
+            log, original_rules, unsat_rules, im_function, noise_threshold
+        )
+        end = time.perf_counter() - start
+        with open("repair_timings_edit_distance.txt", "a") as f:
+            f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
+        return repair
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")
+
+
+from enum import Enum
+from typing import Callable, List
+
+import networkx as nx
+from automata.fa.dfa import DFA
+from rules.abstract_rule import AbstractRule
+from rules.rule_utils import product_automaton
+
+#### APPROXIMATE REPAIR MECHANISM BASED ON EDIT DISTANCE TO THE PRODUCT AUTOMATON OF THE RULES ####
+
+
+class OperationsCost(Enum):
+    Insert = 1
+    Delete = 1
+    Substitute = 2
+
+
+def _to_edit_distance_graph(
+    trace,
+    automaton: DFA,
+    allow_replace: bool = False,
+    skip_useless_insert_self_loops: bool = True,
+) -> nx.MultiDiGraph:
+    G = (
+        nx.MultiDiGraph()
+    )  # We need a MultiDiGraph because multiple edges between the same nodes are possible
+    n = len(trace)
+
+    # Nodes encode (trace_position, automaton_state)
+    for i in range(n + 1):
+        for state in automaton.states:
+            G.add_node((i, state))
+
+    for i in range(n + 1):
+        for state in automaton.states:
+
+            # Keep / delete / replace are only possible if there is still
+            # an observed event to consume
+            if i < n:
+                observed = trace[i]
+
+                # Keep, cost is 0
+                q_next = automaton.transitions[state].get(observed)
+                if q_next is not None:
+                    G.add_edge(
+                        (i, state),
+                        (i + 1, q_next),
+                        weight=0,
+                        op="keep",
+                        consume=observed,
+                        output=observed,
+                    )
+
+                # Delete the event
+                G.add_edge(
+                    (i, state),
+                    (i + 1, state),
+                    weight=OperationsCost.Delete.value,
+                    op="delete",
+                    consume=observed,
+                    output=None,
+                )
+
+                # Replace the event
+                if allow_replace:
+                    for replacement in automaton.input_symbols:
+                        if replacement == observed:
+                            continue
+
+                        q_next = automaton.transitions[state].get(replacement)
+                        if q_next is not None:
+                            G.add_edge(
+                                (i, state),
+                                (i + 1, q_next),
+                                weight=OperationsCost.Substitute.value,
+                                op="replace",
+                                consume=observed,
+                                output=replacement,
+                            )
+
+            # Insert an event
+            # we might need additional events at the end to reach acceptance
+            for inserted in automaton.input_symbols:
+                q_next = automaton.transitions[state].get(inserted)
+                if q_next is None:
+                    continue
+
+                if skip_useless_insert_self_loops and q_next == state:
+                    continue
+
+                G.add_edge(
+                    (i, state),
+                    (i, q_next),
+                    weight=OperationsCost.Insert.value,
+                    op="insert",
+                    consume=None,
+                    output=inserted,
+                )
+
+    return G
+
+
+def _best_edge_data(G: nx.MultiDiGraph, u, v):
+    """
+    Pick the minimum-weight edge between u and v for MultiGraph G, and return its data
+    """
+    edge_options = G.get_edge_data(u, v)
+
+    if edge_options is None:
+        raise RuntimeError(f"No edge between {u} and {v}")
+
+    return min(
+        edge_options.values(),
+        key=lambda data: data.get("weight", 1),
+    )
+
+
+def repair_trace(trace, automaton: DFA):
+    G = _to_edit_distance_graph(trace, automaton)
+
+    source = (0, automaton.initial_state)
+
+    best_cost = float("inf")
+    best_path = None
+
+    for final_state in automaton.final_states:
+        target = (len(trace), final_state)
+
+        try:
+            cost = nx.shortest_path_length(
+                G,
+                source=source,
+                target=target,
+                weight="weight",
+            )
+            path = nx.shortest_path(
+                G,
+                source=source,
+                target=target,
+                weight="weight",
+            )
+        except nx.NetworkXNoPath:
+            continue
+
+        if cost < best_cost:
+            best_cost = cost
+            best_path = path
+
+    if best_path is None:
+        return None
+
+    edits = []
+    repaired = []
+
+    for u, v in zip(best_path, best_path[1:]):
+        data = _best_edge_data(G, u, v)
+
+        edits.append(
+            {
+                "from": u,
+                "to": v,
+                "op": data["op"],
+                "consume": data["consume"],
+                "output": data["output"],
+                "cost": data["weight"],
+            }
+        )
+
+        if data["output"] is not None:
+            repaired.append(data["output"])
+    return {
+        "cost": best_cost,
+        "path": best_path,
+        "edits": edits,
+        "repaired_trace": repaired,
+    }
+
+
+def apply_edit_distance_repair(
+    log,
+    rules: List[AbstractRule],
+    unsat_rules: List[AbstractRule],
+    im_function: Callable,
+    noise_threshold: float = 0.0,
+):
+    # Find the traces that are not accepted by the product automaton
+    original_log = log.copy()
+    alphabet = set(e for trace in log for e in trace)
+    automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
+    product = product_automaton(rules, alphabet, automata_by_rule)
+    print(
+        f"Product automaton has {len(product.states)} states and {sum(len(t) for t in product.transitions.values())} transitions, transitions are {product.transitions}"
+    )
+    if not len(product.final_states):
+        raise Exception(
+            f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
+        )
+    for rule in unsat_rules:
+        log = rule.repair(log)
+
+    unsat_traces = [trace for trace in original_log if trace not in log]
+    for trace in unsat_traces:
+        repair_result = repair_trace(trace, product)
+        log.append(repair_result["repaired_trace"])
+    # Check if we made any progress, e.g., decreased log size or number of events
+    if len(log) == len(original_log) and sum(len(trace) for trace in log) == sum(
+        len(trace) for trace in original_log
+    ):
+        return None
+    return im_function(
+        log,
+        rules,
+        repair_mode=RepairVariant.EditDistance,
+        noise_threshold=noise_threshold,
+    )
+
+
+if __name__ == "__main__":
+    from automata.fa.dfa import DFA
+
+    # Example usage
+
+    dfa = DFA(
+        states={"q0", "q1", "q2"},
+        input_symbols={"a", "b"},
+        transitions={
+            "q0": {
+                "a": "q1",
+                "b": "q0",
+            },
+            "q1": {
+                "a": "q1",
+                "b": "q2",
+            },
+            "q2": {
+                "a": "q2",
+                "b": "q2",
+            },
+        },
+        initial_state="q0",
+        final_states={"q2"},
+    )
+    trace = ["c", "c", "d", "b"]
+    result = repair_trace(trace, dfa)
+    print(result)
