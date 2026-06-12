@@ -254,3 +254,4 @@ __pycache__/
 .DS_STORE
 
 *.txt
+/experiments/*
