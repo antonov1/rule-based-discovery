@@ -10,7 +10,7 @@ class NotSuccessionRule(AbstractRule):
     def __init__(self, activity_a: str, activity_b: str) -> None:
         if activity_a == activity_b:
             raise ValueError(
-                "Activity A and B must be different for a not succession rule. Use AtMost1 instead."
+                "Activity A and B must be different for a not succession rule. Use AtMostOnce instead."
             )
         super().__init__([activity_a, activity_b])
         self.description = (
