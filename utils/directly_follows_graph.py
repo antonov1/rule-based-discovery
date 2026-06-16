@@ -510,5 +510,4 @@ class DirectlyFollowsGraph:
                     "Repair made no progress; this should be impossible under "
                     "the original connectivity assumption."
                 )
-
         return DirectlyFollowsGraph._from_augmented_graph(filtered)

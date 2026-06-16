@@ -15,8 +15,10 @@ from inductive_miner.fallthroughs import (
     empty,
     flower_model,
     n_tau,
+    po,
     rule_seq,
     s_tau,
+    xor,
 )
 from inductive_miner.im_utils import (
     add_child,
@@ -36,7 +38,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def handle_empty_traces(
@@ -336,13 +338,18 @@ def apply_IM_with_rules(
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
 
-    empty_traces = handle_empty_traces(
-        log,
-        apply_IM_with_rules,
-        rules=rules,
-        repair_mode=repair_mode,
-        noise_threshold=noise_threshold,
+    empty_traces = (
+        handle_empty_traces(
+            log,
+            apply_IM_with_rules,
+            rules=rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
+        )
+        if "ArtificialNoneNode" in dfg_graph
+        else None
     )
+
     if empty_traces is not None:
         return empty_traces
 
@@ -434,22 +441,22 @@ def apply_IM_with_rules(
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
     order_of_fall_throughs = [
-        empty,
         activity_once,
         activity_concur,
         s_tau,
         n_tau,
-        flower_model,
-        rule_seq,
+        # flower_model,
+        po,
+        xor,
     ]
     name_of_fall_throughs = [
-        "empty",
         "once",
         "concur",
         "s_tau",
         "tau",
-        "flower",
-        "rseq",
+        # "flower",
+        "po",
+        "xor",
     ]
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
@@ -724,14 +731,15 @@ if __name__ == "__main__":
         ResponseRule("ER Sepsis Triage", "LacticAcid"),
         ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
         InitializationRule("ER Registration"),
-        NotSuccessionRule("Admission NC", "Release A"),
+        NotCoExistenceRule("Admission NC", "Release A"),
     ]
-    rules = [
-        ChainResponseRule("ER Registration", "ER Triage"),
-        InitializationRule("ER Registration"),
-        AtMostOnceRule("ER Registration"),
-        ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
-    ]
+    # rules = [
+    #    ChainResponseRule("ER Registration", "ER Triage"),
+    #    InitializationRule("ER Registration"),
+    #    AtMostOnceRule("ER Registration"),
+    #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
+    # ]
+
     rules = [
         RespondedExistenceRule("h", "a"),
         ResponseRule("k", "h"),
@@ -751,6 +759,7 @@ if __name__ == "__main__":
     )
     log = pm4py.convert_to_dataframe(log)
 
+    # log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log_org = log.copy()
 
     model = apply_IM_with_rules(

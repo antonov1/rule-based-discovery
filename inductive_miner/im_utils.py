@@ -528,9 +528,9 @@ def apply_edit_distance_repair(
     alphabet = set(e for trace in log for e in trace)
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
-    print(
-        f"Product automaton has {len(product.states)} states and {sum(len(t) for t in product.transitions.values())} transitions, transitions are {product.transitions}"
-    )
+    # print(
+    #    f"Product automaton has {len(product.states)} states and {sum(len(t) for t in product.transitions.values())} transitions, transitions are {product.transitions}"
+    # )
     if not len(product.final_states):
         raise Exception(
             f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
