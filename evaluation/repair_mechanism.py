@@ -58,7 +58,7 @@ def preprocess_log(log):
 def evaluate():
     rows = []
 
-    for i in range(0, 2):
+    for i in range(0, 100):
         print(f"Starting trial {i}")
 
         process_tree = simulate_process_tree()
@@ -95,7 +95,7 @@ def evaluate():
             continue
 
         try:
-            with time_limit(300):
+            with time_limit(360):
                 print(f"Trial {i}: discovering prepruned model")
                 model_prepruned = normalize_tree(apply_IM(log_org))
                 fitness_prepruned = fitness_alignment(log, model_prepruned)
