@@ -38,7 +38,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def handle_empty_traces(
@@ -756,7 +756,7 @@ if __name__ == "__main__":
         ChainResponseRule("m", "r"),
         ResponseRule("r", "a"),
         ResponseRule("b", "r"),
-        ExistenceRule("kuramiqnko"),
+        ChainResponseRule("b", "rhdsahdwqh"),
     ]
     log = pm4py.read_xes("./inductive_miner/log_78.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
@@ -768,7 +768,9 @@ if __name__ == "__main__":
     # log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log_org = log.copy()
 
-    model = apply_IM_with_rules(log, rules=rules, repair_mode=RepairVariant.TraceLevel)
+    model = apply_IM_with_rules(
+        log, rules=rules, repair_mode=RepairVariant.EditDistance
+    )
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)

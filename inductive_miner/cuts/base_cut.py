@@ -58,8 +58,10 @@ class BaseCut(ABC):
                     if rule.activity_b in groups[i]:
                         group_b_idx = i
                 if group_a_idx is None or group_b_idx is None:
-                    # not relevant anymore
-                    continue
+                    if group_a_idx is not None:
+                        projected_rules[group_a_idx].append(rule)
+                    elif group_b_idx is not None:
+                        projected_rules[group_b_idx].append(rule)
                 if group_a_idx is not None and group_b_idx is not None:
                     if group_a_idx != group_b_idx:
                         # We have just eliminated a rule
