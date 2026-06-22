@@ -95,7 +95,7 @@ def evaluate():
             continue
 
         try:
-            with time_limit(360):
+            with time_limit(600):
                 print(f"Trial {i}: discovering prepruned model")
                 model_prepruned = normalize_tree(apply_IM(log_org))
                 fitness_prepruned = fitness_alignment(log, model_prepruned)

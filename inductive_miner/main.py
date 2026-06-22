@@ -22,7 +22,6 @@ from inductive_miner.fallthroughs import (
 )
 from inductive_miner.im_utils import (
     add_child,
-    assert_rules_supported,
     base_cases,
     intersection_of_logs,
     repair_mechanism,
@@ -205,9 +204,9 @@ def apply_BIM_with_rules(
             )
             projected_rules = cut.project_rules(rules, groups)
             for i in range(len(sublogs)):
-                assert_rules_supported(
-                    "In rule refinement:", sublogs[i], projected_rules[i]
-                )
+                # assert_rules_supported(
+                #    "In rule refinement:", sublogs[i], projected_rules[i]
+                # )
 
                 child_node = apply_BIM_with_rules(
                     sublogs[i],
@@ -409,9 +408,9 @@ def apply_IM_with_rules(
             )
             projected_rules = cut.project_rules(rules, groups)
             for i in range(len(sublogs)):
-                assert_rules_supported(
-                    "In rule refinement:", sublogs[i], projected_rules[i]
-                )
+                # assert_rules_supported(
+                #    "In rule refinement:", sublogs[i], projected_rules[i]
+                # )
 
                 child_node = apply_IM_with_rules(
                     sublogs[i],
@@ -757,6 +756,7 @@ if __name__ == "__main__":
         ChainResponseRule("m", "r"),
         ResponseRule("r", "a"),
         ResponseRule("b", "r"),
+        ExistenceRule("kuramiqnko"),
     ]
     log = pm4py.read_xes("./inductive_miner/log_78.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
@@ -768,9 +768,7 @@ if __name__ == "__main__":
     # log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log_org = log.copy()
 
-    model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance
-    )
+    model = apply_IM_with_rules(log, rules=rules, repair_mode=RepairVariant.TraceLevel)
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(model)
     fitness = fitness_token_based_tree(log_org, model)

@@ -542,6 +542,13 @@ def apply_edit_distance_repair(
     # Find the traces that are not accepted by the product automaton
     original_log = log.copy()
     alphabet = set(e for trace in log for e in trace)
+    for rule in rules or []:
+        if hasattr(rule, "activity_a"):
+            alphabet.add(rule.activity_a)
+        if hasattr(rule, "activity_b"):
+            alphabet.add(rule.activity_b)
+        if hasattr(rule, "target_activity"):
+            alphabet.add(rule.target_activity)
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
     if not len(product.final_states):

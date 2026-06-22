@@ -209,7 +209,9 @@ def merge_groups_connected_by_chain_rules(
                 continue
 
             low, high = sorted((i, j))
-
+            if high - low == 1:
+                # they are already consecutive
+                continue
             merged_group = set().union(*groups[low : high + 1])
 
             groups = groups[:low] + [merged_group] + groups[high + 1 :]
@@ -391,7 +393,7 @@ def detect_rule_based_po(
 
     # If there is more than one component and no block-level edges, this is still
     # a valid partial order: all components are unordered/parallel.
-    if block_graph.number_of_nodes() <= 1:
+    if block_graph.number_of_nodes() == 0:
         return None
 
     po = RuleBasedPO(
@@ -450,6 +452,30 @@ def topological_layers_for_nodes(
     return layers
 
 
+def split_group_by_chain_rules(
+    group: Set[str],
+    rules: List[AbstractRule],
+) -> List[Set[str]]:
+    if len(group) <= 1:
+        return [set(group)]
+
+    graph = nx.DiGraph()
+    graph.add_nodes_from(group)
+
+    for rule in rules or []:
+        if isinstance(rule, (ChainResponseRule, ChainPrecedenceRule)):
+            if rule.activity_a in group and rule.activity_b in group:
+                graph.add_edge(rule.activity_a, rule.activity_b)
+
+    if graph.number_of_edges() == 0:
+        return [set(group)]
+
+    if not nx.is_directed_acyclic_graph(graph):
+        return [set(group)]
+
+    return [set(layer) for layer in nx.topological_generations(graph) if layer]
+
+
 def po_to_parallel_sequence_branches(
     po: RuleBasedPO,
     rules: List[AbstractRule],
@@ -471,7 +497,17 @@ def po_to_parallel_sequence_branches(
         if local_layers is None:
             return None
 
-        branch = [set().union(*(po.groups[i] for i in layer)) for layer in local_layers]
+        branch = []
+
+        for layer in local_layers:
+            layer_group = set().union(*(po.groups[i] for i in layer))
+
+            split_layers = split_group_by_chain_rules(
+                layer_group,
+                rules,
+            )
+
+            branch.extend(split_layers)
 
         branch_alphabet = set().union(*branch)
         branch_rules = supported_rules_alphabet(rules, branch_alphabet)
@@ -484,8 +520,7 @@ def po_to_parallel_sequence_branches(
     if not branches:
         return None
 
-    # Reject only if the whole result is one branch with one group.
-    # But allow multiple one-group branches, because that is pure parallelism.
+    # Now this is checked AFTER internal chain splitting.
     if len(branches) == 1 and len(branches[0]) <= 1:
         return None
 
@@ -600,7 +635,8 @@ def apply(
 
     if not branch_trees:
         return None
-
+    if len(branch_trees) == 1 and len(po.groups) == 1:
+        return None
     if len(branch_trees) == 1:
         return branch_trees[0]
 
@@ -613,28 +649,40 @@ def apply(
 
 
 if __name__ == "__main__":
-    from rules import (
-        ChainPrecedenceRule,
-        ChainResponseRule,
-        ExistenceRule,
-        NotCoExistenceRule,
-    )
+    from rules import ChainResponseRule, ExistenceRule
+    from utils.directly_follows_graph import DirectlyFollowsGraph
 
     rules = [
-        ExistenceRule("r"),
         ExistenceRule("m"),
-        ExistenceRule("n"),
         ChainResponseRule("m", "r"),
-        NotCoExistenceRule("n", "p"),
+        ExistenceRule("r"),
     ]
 
-    alphabet = {"m", "n", "r", "p"}
-    log = [["n", "m", "r"], ["m", "r", "p"]]
+    # Concrete minimized version of the data you showed:
+    # many traces are ["m", "r"], with one trace ["r", "m", "r"].
+    log = (
+        [["m", "r"] for _ in range(20)]
+        + [["r", "m", "r"]]
+        + [["m", "r"] for _ in range(20)]
+    )
+
+    alphabet = {"m", "r"}
+
     dfg = DirectlyFollowsGraph(log).graph
 
+    print("DFG nodes:")
+    print(list(dfg.nodes(data=True)))
+
+    print("DFG edges:")
+    print(list(dfg.edges(data=True)))
+
     po = detect_rule_based_po(rules, alphabet, dfg)
+    print("Detected PO:")
     print(po)
 
     if po is not None:
         branches = po_to_parallel_sequence_branches(po, rules)
+        print("Branches:")
         print(branches)
+    else:
+        print("PO fall-through did not fire.")
