@@ -191,6 +191,22 @@ def _build_loop_tree(do_first=None, redo=None) -> ProcessTree:
     return root
 
 
+def supported_rules_alphabet(alphabet, rules):
+    if not rules:
+        return []
+
+    filtered = []
+
+    for rule in rules:
+        if hasattr(rule, "target_activity"):
+            if rule.target_activity in alphabet:
+                filtered.append(rule)
+        elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
+            if rule.activity_a in alphabet and rule.activity_b in alphabet:
+                filtered.append(rule)
+    return filtered
+
+
 def supported_rules(log, rules):
     if not rules:
         return []
@@ -528,13 +544,11 @@ def apply_edit_distance_repair(
     alphabet = set(e for trace in log for e in trace)
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
-    # print(
-    #    f"Product automaton has {len(product.states)} states and {sum(len(t) for t in product.transitions.values())} transitions, transitions are {product.transitions}"
-    # )
     if not len(product.final_states):
         raise Exception(
             f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
         )
+    # We filter out satisfied traces first to avoid unnecessary repair attempts
     for rule in unsat_rules:
         log = rule.repair(log)
 

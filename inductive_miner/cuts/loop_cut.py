@@ -58,20 +58,6 @@ class LoopCut(BaseCut):
                 rule, ChainPrecedenceRule
             ):
                 # We have to check if b is in the do part and a is in the redo part
-                print(
-                    "Checking rule ",
-                    rule,
-                    " with groups ",
-                    groups,
-                    " group rest ",
-                    group_rest,
-                )
-                print(
-                    "Rule activity a ",
-                    rule.activity_a,
-                    " rule activity b ",
-                    rule.activity_b,
-                )
                 if rule.activity_b in groups[0] and any(
                     rule.activity_a in group for group in group_rest
                 ):

@@ -28,14 +28,16 @@ def build_cdg(rules: List[AbstractRule], alphabet: Set[str]) -> nx.DiGraph:
     g.add_nodes_from(alphabet)
     g.add_node(ARTIFICIAL_START)
     g.add_node(ARTIFICIAL_END)
-
+    initialization_node, end_node = ARTIFICIAL_START, ARTIFICIAL_END
     for r in rules or []:
 
         if isinstance(r, InitializationRule):
             g.add_edge(ARTIFICIAL_START, r.target_activity)
+            r.target_activity
 
         elif isinstance(r, EndRule):
             g.add_edge(r.target_activity, ARTIFICIAL_END)
+            r.target_activity
 
         elif (
             isinstance(r, ResponseRule)
@@ -47,7 +49,7 @@ def build_cdg(rules: List[AbstractRule], alphabet: Set[str]) -> nx.DiGraph:
         elif isinstance(r, NotSuccessionRule):
             # not ideal but we can always switch their places
             g.add_edge(r.activity_b, r.activity_a)
-
+    # floating components should be connected to initialization_node and end_node
     return g
 
 
