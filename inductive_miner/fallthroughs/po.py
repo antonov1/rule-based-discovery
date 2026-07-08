@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Set, Tuple
 
 import networkx as nx
+from inductive_miner.cuts.concurrent_cut import ConcurrentCut
 from inductive_miner.cuts.sequence import SequenceCut
 from inductive_miner.fallthroughs.fallthrough_utils import (
     add_child,
@@ -509,7 +510,7 @@ def po_to_parallel_sequence_branches(
             branch.extend(split_layers)
 
         branch_alphabet = set().union(*branch)
-        branch_rules = supported_rules_alphabet(rules, branch_alphabet)
+        branch_rules = supported_rules_alphabet(branch_alphabet, rules)
 
         branch = merge_groups_connected_by_chain_rules(branch, branch_rules)
 
@@ -532,7 +533,7 @@ def mine_sequence_branch(
     im_function: Callable,
     log: List[List[str]],
     dfg: nx.DiGraph,
-    rules: List[AbstractRule],
+    branch_rules: List[AbstractRule],
     groups: List[Set[str]],
     repair_mode,
     noise_threshold: float,
@@ -610,18 +611,19 @@ def apply(
         return None
 
     branches = po_to_parallel_sequence_branches(po, rules)
-
+    branch_alphabets = [set().union(*branch) for branch in branches] if branches else []
     if branches is None:
         return None
-
     branch_trees = []
-
-    for branch_groups in branches:
+    projected_branch_rules = ConcurrentCut.project_rules(rules, branch_alphabets)
+    for idx in range(len(branches)):
+        branch_groups = branches[idx]
+        branch_rules = projected_branch_rules[idx] if projected_branch_rules else []
         branch_tree = mine_sequence_branch(
             im_function=im_function,
             log=log,
             dfg=dfg,
-            rules=rules,
+            rules=branch_rules or [],
             groups=branch_groups,
             repair_mode=repair_mode,
             noise_threshold=noise_threshold,

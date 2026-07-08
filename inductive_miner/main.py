@@ -748,14 +748,15 @@ if __name__ == "__main__":
     # ]
 
     rules = [
-        ResponseRule("b", "n"),
-        PrecedenceRule("f", "p"),
-        RespondedExistenceRule("c", "a"),
-        ResponseRule("c", "f"),
-        ChainPrecedenceRule("f", "p"),
-        CoExistenceRule("n", "m"),
-        PrecedenceRule("a", "k"),
-        PrecedenceRule("f", "k"),
+        AtMostOnceRule("b"),
+        RespondedExistenceRule("l", "e"),
+        PrecedenceRule("b", "e"),
+        ResponseRule("k", "m"),
+        ResponseRule("j", "b"),
+        RespondedExistenceRule("f", "k"),
+        RespondedExistenceRule("m", "f"),
+        RespondedExistenceRule("d", "a"),
+        RespondedExistenceRule("k", "j"),
     ]
     log = pm4py.read_xes("./inductive_miner/log_1.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
