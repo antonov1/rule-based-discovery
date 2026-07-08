@@ -138,8 +138,10 @@ def code_extraction(code_snippet: str, activities=None):
         "ChainPrecedence": ChainPrecedenceRule,
     }
     code = match.group(1).strip()
+    print(f"Extracted code snippet:\n{code}")
     # remove all leading indentation from the code
     code = process_code(code, activities=activities)
+    print(f"Processed code:\n{code}")
     code = re.sub(r"^\s+", "", code, flags=re.MULTILINE)
     print(f"Extracted code:\n{code}")
 
