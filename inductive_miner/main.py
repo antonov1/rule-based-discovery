@@ -29,7 +29,7 @@ from inductive_miner.im_utils import (
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import product_automaton
 from rules import *
-from inductive_miner.im_utils import RepairVariant
+from inductive_miner.im_utils import normalize_tree, RepairVariant
 from metrics.fitness import fitness_token_based_tree
 from metrics.precision import precision_token_based_tree
 from metrics.rule_conformance import (
@@ -767,7 +767,7 @@ if __name__ == "__main__":
         log, rules=rules, repair_mode=RepairVariant.EditDistance
     )
     pm4py.view_process_tree(model)  # Visualize the process tree
-    print(model)
+    print(normalize_tree(model))
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
     print(f"Fit: {fitness}, prec: {prec}")

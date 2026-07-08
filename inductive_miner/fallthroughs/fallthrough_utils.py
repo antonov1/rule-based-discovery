@@ -5,6 +5,7 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
+    CoExistenceRule,
     EndRule,
     InitializationRule,
     NotCoExistenceRule,
@@ -56,9 +57,11 @@ def build_cdg(rules: List[AbstractRule], alphabet: Set[str]) -> nx.DiGraph:
         elif isinstance(r, NotSuccessionRule):
             # not ideal but we can always switch their places
             g.add_edge(r.activity_b, r.activity_a)
-        elif isinstance(r, RespondedExistenceRule):
-            g.add_edge(r.activity_a, r.activity_b)
-            g.add_edge(r.activity_b, r.activity_a)
+        elif isinstance(r, RespondedExistenceRule) or isinstance(r, CoExistenceRule):
+            # just add them as nodes
+            g.add_node(r.activity_a) if r.activity_a not in g.nodes else None
+            g.add_node(r.activity_b) if r.activity_b not in g.nodes else None
+
     # floating components should be connected to initialization_node and end_node
     return g
 
