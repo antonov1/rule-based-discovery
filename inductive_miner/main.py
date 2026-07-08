@@ -748,18 +748,12 @@ if __name__ == "__main__":
     # ]
 
     rules = [
-        RespondedExistenceRule("d", "o"),
-        RespondedExistenceRule("k", "b"),
-        RespondedExistenceRule("a", "d"),
-        RespondedExistenceRule("o", "l"),
-        RespondedExistenceRule("a", "q"),
-        RespondedExistenceRule("m", "f"),
-        RespondedExistenceRule("q", "d"),
-        AtMostOnceRule("o"),
-        ResponseRule("q", "e"),
-        ResponseRule("q", "a"),
+        RespondedExistenceRule("d", "c"),
+        RespondedExistenceRule("r", "h"),
+        RespondedExistenceRule("s", "d"),
+        ResponseRule("e", "m"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_220.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_13.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True

@@ -93,7 +93,7 @@ def evaluate(ids: List[str]):
 
         try:
             with time_limit(420):
-                print(f"Trial {i}: discovering prepruned model")
+                print(f"Trial {ids[i]}: discovering prepruned model")
                 model_prepruned = normalize_tree(apply_IM(log_org))
                 fitness_prepruned = fitness_alignment(log, model_prepruned)
                 precision_prepruned = precision_alignment_tree(log, model_prepruned)
@@ -101,7 +101,7 @@ def evaluate(ids: List[str]):
                     model_prepruned, sampled_rules, alphabet
                 )
 
-                print(f"Trial {i}: trace-level model")
+                print(f"Trial {ids[i]}: trace-level model")
                 model_trace = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.TraceLevel
@@ -111,7 +111,7 @@ def evaluate(ids: List[str]):
                 precision_trace = precision_alignment_tree(log, model_trace)
                 conformance_trace = conformance(model_trace, sampled_rules, alphabet)
 
-                print(f"Trial {i}: event-level model")
+                print(f"Trial {ids[i]}: event-level model")
                 model_event = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.EventLevel
@@ -121,7 +121,7 @@ def evaluate(ids: List[str]):
                 precision_event = precision_alignment_tree(log, model_event)
                 conformance_event = conformance(model_event, sampled_rules, alphabet)
 
-                print(f"Trial {i}: edit-distance model")
+                print(f"Trial {ids[i]}: edit-distance model")
                 model_edit = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.EditDistance
@@ -132,15 +132,15 @@ def evaluate(ids: List[str]):
                 conformance_edit = conformance(model_edit, sampled_rules, alphabet)
 
         except TimeoutException:
-            print(f"Trial {i} timed out, skipping")
+            print(f"Trial {ids[i]} timed out, skipping")
             continue
         except Exception as e:
-            print(f"Trial {i} failed: {e}")
+            print(f"Trial {ids[i]} failed: {e}")
             continue
 
         rows.append(
             {
-                "trial": i,
+                "trial": ids[i],
                 "num_events": len(log),
                 "num_cases": log["case:concept:name"].nunique(),
                 "num_rules": len(sampled_rules),
