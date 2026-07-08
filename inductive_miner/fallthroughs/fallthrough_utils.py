@@ -10,6 +10,7 @@ from rules import (
     NotCoExistenceRule,
     NotSuccessionRule,
     PrecedenceRule,
+    RespondedExistenceRule,
     ResponseRule,
 )
 
@@ -23,12 +24,18 @@ ARTIFICIAL_START = "__ArtificialStart__"
 ARTIFICIAL_END = "__ArtificialEnd__"
 
 
+def check_acyclic(graph: nx.DiGraph, add_edge: Tuple[str, str]) -> bool:
+    graph.add_edge(*add_edge)
+    is_acyclic = nx.is_directed_acyclic_graph(graph)
+    graph.remove_edge(*add_edge)
+    return is_acyclic
+
+
 def build_cdg(rules: List[AbstractRule], alphabet: Set[str]) -> nx.DiGraph:
     g = nx.DiGraph()
     g.add_nodes_from(alphabet)
     g.add_node(ARTIFICIAL_START)
     g.add_node(ARTIFICIAL_END)
-    initialization_node, end_node = ARTIFICIAL_START, ARTIFICIAL_END
     for r in rules or []:
 
         if isinstance(r, InitializationRule):
@@ -48,6 +55,9 @@ def build_cdg(rules: List[AbstractRule], alphabet: Set[str]) -> nx.DiGraph:
             g.add_edge(r.activity_a, r.activity_b)
         elif isinstance(r, NotSuccessionRule):
             # not ideal but we can always switch their places
+            g.add_edge(r.activity_b, r.activity_a)
+        elif isinstance(r, RespondedExistenceRule):
+            g.add_edge(r.activity_a, r.activity_b)
             g.add_edge(r.activity_b, r.activity_a)
     # floating components should be connected to initialization_node and end_node
     return g

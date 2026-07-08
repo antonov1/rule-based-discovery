@@ -327,8 +327,7 @@ def detect_rule_based_po(
 
     if start_nodes & end_nodes:
         return None
-
-    # Keep your current conservative semantics.
+    # We require a PO to have at most one start and one end node. Otherwise, it is unsatisfiable because Init(A) and Init(B) cannot hold together.
     if len(start_nodes) > 1 or len(end_nodes) > 1:
         return None
 
@@ -658,7 +657,7 @@ if __name__ == "__main__":
         ExistenceRule("r"),
     ]
 
-    # Concrete minimized version of the data you showed:
+    # Concrete minimized version of the data
     # many traces are ["m", "r"], with one trace ["r", "m", "r"].
     log = (
         [["m", "r"] for _ in range(20)]

@@ -82,6 +82,10 @@ class BaseCut(ABC):
                             projected_rules[group_b_idx].append(
                                 ExistenceRule(rule.activity_b)
                             )
+                            if isinstance(rule, RespondedExistenceRule):
+                                projected_rules[group_a_idx].append(
+                                    ExistenceRule(rule.activity_a)
+                                )
                         elif isinstance(rule, CoExistenceRule):
                             # Both should exist, otherwise, hard
                             projected_rules[group_a_idx].append(
