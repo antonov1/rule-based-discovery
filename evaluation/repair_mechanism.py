@@ -1,3 +1,4 @@
+import re
 import signal
 from contextlib import contextmanager
 from typing import List
@@ -71,7 +72,9 @@ def evaluate(ids: List[str]):
                 continue
             lines.append(f"r{j} = {line}")
         code = "\n".join(lines)
-        code = code.replace("(", "('").replace(")", "')").replace(",", "','")
+        code = re.sub(r"\(\s*", "('", code)
+        code = re.sub(r"\s*,\s*", "', '", code)
+        code = re.sub(r"\s*\)", "')", code)
         # wrap it in python
         code = f"```python\n{code}\n```"
         print(f"Code for trial {ids[i]}: {code}")
