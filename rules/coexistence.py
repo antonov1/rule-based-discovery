@@ -92,5 +92,5 @@ class CoExistenceRule(AbstractRule):
             input_symbols=set(alphabet),
             transitions=transitions,
             initial_state=q0,
-            final_states={q3},
+            final_states={q0, q3},
         )
