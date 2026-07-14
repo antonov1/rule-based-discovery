@@ -323,6 +323,9 @@ class DirectlyFollowsGraph:
 
         original = DirectlyFollowsGraph._to_augmented_graph(dfg)
 
+        if original.number_of_edges() == 0:
+            return dfg.copy()
+
         if start not in original:
             raise ValueError("Augmented graph has no start node")
 
@@ -382,22 +385,22 @@ class DirectlyFollowsGraph:
         # ------------------------------------------------------------
 
         if filtered.out_degree(start) == 0:
-            best_start_edge = max(
-                original.out_edges(start, data=True),
-                key=lambda edge: edge[2].get("weight", 1),
-            )
-
-            u, v, data = best_start_edge
-            filtered.add_edge(u, v, weight=data.get("weight", 1))
+            start_edges = list(original.out_edges(start, data=True))
+            if start_edges:
+                u, v, data = max(
+                    start_edges,
+                    key=lambda edge: (edge[2].get("weight", 1), str(edge[1])),
+                )
+                filtered.add_edge(u, v, weight=data.get("weight", 1))
 
         if filtered.in_degree(end) == 0:
-            best_end_edge = max(
-                original.in_edges(end, data=True),
-                key=lambda edge: edge[2].get("weight", 1),
-            )
-
-            u, v, data = best_end_edge
-            filtered.add_edge(u, v, weight=data.get("weight", 1))
+            end_edges = list(original.in_edges(end, data=True))
+            if end_edges:
+                u, v, data = max(
+                    end_edges,
+                    key=lambda edge: (edge[2].get("weight", 1), str(edge[0])),
+                )
+                filtered.add_edge(u, v, weight=data.get("weight", 1))
 
         # ------------------------------------------------------------
         # 4. Repair
@@ -439,7 +442,7 @@ class DirectlyFollowsGraph:
 
             progressed = False
 
-            for activity in broken:
+            for activity in sorted(broken, key=str):
                 # ----------------------------------------------------
                 # 4a. Add path from current reachable area to activity
                 # ----------------------------------------------------

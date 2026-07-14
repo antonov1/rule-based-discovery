@@ -7,6 +7,7 @@ from inductive_miner.cuts.sequence import SequenceCut
 from inductive_miner.fallthroughs.fallthrough_utils import (
     add_child,
     ARTIFICIAL_END,
+    ARTIFICIAL_NONE_NODE,
     ARTIFICIAL_START,
     build_cdg,
 )
@@ -19,8 +20,6 @@ from rules import (
     NotCoExistenceRule,
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
-
-ARTIFICIAL_NONE_NODE = "ArtificialNoneNode"
 
 
 def abstract_dfg(
@@ -289,7 +288,7 @@ def handle_chain_components(
                     if cost_o_cmp > cost_cmp_o
                     else new_edges.add((cmp, other_cmp))
                 )
-                print(f"New edges: {new_edges}")
+                # print(f"New edges: {new_edges}")
     po.edges.update(new_edges)
     return po
 
@@ -311,10 +310,10 @@ def detect_rule_based_po(
 
     cdg = build_cdg(rules, alphabet)
 
-    print(
-        f"Constructed CDG with edges: {list(cdg.edges)} "
-        f"and nodes: {list(cdg.nodes)}"
-    )
+    # print(
+    #    f"Constructed CDG with edges: {list(cdg.edges)} "
+    #    f"and nodes: {list(cdg.nodes)}"
+    # )
 
     activity_graph = cdg.subgraph(alphabet).copy()
 
@@ -341,9 +340,9 @@ def detect_rule_based_po(
     components = get_chain_components(rules, alphabet)
     components = merge_components_by_not_coexistence(components, rules)
 
-    print(
-        "Components after merging by chain rules and not co-existence: " f"{components}"
-    )
+    # print(
+    #    "Components after merging by chain rules and not co-existence: " f"{components}"
+    # )
 
     component_of = {}
 
@@ -524,7 +523,7 @@ def po_to_parallel_sequence_branches(
     if len(branches) == 1 and len(branches[0]) <= 1:
         return None
 
-    print(f"Detected PO branches: {branches}")
+    # print(f"Detected PO branches: {branches}")
 
     return branches
 
@@ -542,7 +541,7 @@ def mine_sequence_branch(
         return None
 
     branch_alphabet = set().union(*groups)
-    branch_rules = supported_rules_alphabet(branch_alphabet, rules)
+    branch_rules = supported_rules_alphabet(branch_alphabet, branch_rules)
 
     violations = SequenceCut.check_rules(branch_rules, groups)
 
@@ -605,7 +604,7 @@ def apply(
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    print(f"Detected po is: {po}")
+    # print(f"Detected po is: {po}")
 
     if po is None:
         return None
@@ -623,7 +622,7 @@ def apply(
             im_function=im_function,
             log=log,
             dfg=dfg,
-            rules=branch_rules or [],
+            branch_rules=branch_rules or [],
             groups=branch_groups,
             repair_mode=repair_mode,
             noise_threshold=noise_threshold,
@@ -671,15 +670,15 @@ if __name__ == "__main__":
 
     dfg = DirectlyFollowsGraph(log).graph
 
-    print("DFG nodes:")
-    print(list(dfg.nodes(data=True)))
+    # print("DFG nodes:")
+    # print(list(dfg.nodes(data=True)))
 
-    print("DFG edges:")
-    print(list(dfg.edges(data=True)))
+    # print("DFG edges:")
+    # print(list(dfg.edges(data=True)))
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    print("Detected PO:")
-    print(po)
+    # print("Detected PO:")
+    # print(po)
 
     if po is not None:
         branches = po_to_parallel_sequence_branches(po, rules)

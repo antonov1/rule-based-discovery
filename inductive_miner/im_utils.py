@@ -11,6 +11,7 @@ class RepairVariant(Enum):
     EventLevel = "event_level"
     TraceLevel = "trace_level"
     EditDistance = "edit_distance"
+    Naive = "naive"
 
 
 REPAIR_VARIANT = RepairVariant.EditDistance
@@ -124,22 +125,22 @@ def base_cases(
     """
     nodes = set(dfg_graph.nodes)
 
-    if "ArtificialNoneNode" in nodes:
-        raise Exception(f"Base case error: log has empty traces.")
-
     if not nodes:
         return process_tree
 
-    if len(nodes) == 1:
-        return _build_single_activity_tree(log, dfg_graph, nodes, im_function, rules)
+    if len(nodes) == 1 or (len(nodes) == 2 and "ArtificialNoneNode" in nodes):
+        tree = _build_single_activity_tree(
+            log, dfg_graph, nodes, im_function, rules, **kwargs
+        )
+        return tree if tree is not None else process_tree
 
     raise Exception(
-        f"Base case error: log has multiple activities but no cut was found."
+        f"Base case error: log has multiple activities but no cut was found. Log is: {log}, process_tree is: {process_tree}, dfg_graph is: {dfg_graph}, nodes are: {nodes}"
     )
 
 
 def _build_single_activity_tree(
-    log, dfg_graph, nodes, im_function, rules
+    log, dfg_graph, nodes, im_function, rules, **kwargs
 ) -> ProcessTree:
     if not nodes:
         return ProcessTree()  # Tau
@@ -161,6 +162,8 @@ def _build_single_activity_tree(
                     unsat_rules,
                     im_function,
                     rules,
+                    repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
+                    noise_threshold=kwargs.get("noise_threshold", 0.0),
                 )
 
         return _build_loop_tree(do_first=None, redo=activity)
@@ -170,7 +173,14 @@ def _build_single_activity_tree(
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
 
         if unsat_rules:
-            return repair_mechanism(log, unsat_rules, im_function, rules)
+            return repair_mechanism(
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
+            )
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -350,6 +360,8 @@ def repair_mechanism(
         with open("repair_timings_edit_distance.txt", "a") as f:
             f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
         return repair
+    elif repair_mode == RepairVariant.Naive:
+        return None
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")
 

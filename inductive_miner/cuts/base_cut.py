@@ -70,16 +70,22 @@ class BaseCut(ABC):
                             projected_rules[group_b_idx].append(
                                 InitializationRule(rule.activity_b)
                             )
-                            projected_rules[group_a_idx].append(
-                                AtMostOnceRule(rule.activity_a)
+                            projected_rules[group_a_idx].extend(
+                                [
+                                    AtMostOnceRule(rule.activity_a),
+                                    EndRule(rule.activity_a),
+                                ]
                             )
 
                         elif isinstance(rule, ChainPrecedenceRule):
                             projected_rules[group_a_idx].append(
                                 EndRule(rule.activity_a)
                             )
-                            projected_rules[group_b_idx].append(
-                                AtMostOnceRule(rule.activity_b)
+                            projected_rules[group_b_idx].extend(
+                                [
+                                    AtMostOnceRule(rule.activity_b),
+                                    InitializationRule(rule.activity_b),
+                                ]
                             )
 
                         elif isinstance(rule, ResponseRule) or isinstance(

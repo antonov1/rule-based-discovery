@@ -23,6 +23,7 @@ def add_child(parent, child):
 
 ARTIFICIAL_START = "__ArtificialStart__"
 ARTIFICIAL_END = "__ArtificialEnd__"
+ARTIFICIAL_NONE_NODE = "ArtificialNoneNode"
 
 
 def check_acyclic(graph: nx.DiGraph, add_edge: Tuple[str, str]) -> bool:

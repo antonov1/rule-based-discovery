@@ -359,7 +359,9 @@ def apply_IM_with_rules(
     if empty_traces is not None:
         return empty_traces
 
-    if len(dfg_graph.nodes) <= 1:
+    if len(dfg_graph.nodes) <= 1 or (
+        len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in dfg_graph
+    ):
         # print(f"Applying base case to log {log}")
         process_tree = base_cases(
             log,
@@ -367,6 +369,8 @@ def apply_IM_with_rules(
             dfg_graph,
             apply_IM_with_rules,
             rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
         )
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
@@ -735,10 +739,14 @@ if __name__ == "__main__":
     NotCoExistence(Admission NC, Release A)
     """
     rules = [
-        ResponseRule("ER Sepsis Triage", "LacticAcid"),
-        ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
-        InitializationRule("ER Registration"),
-        NotCoExistenceRule("Admission NC", "Release A"),
+        PrecedenceRule("r", "l"),
+        PrecedenceRule("n", "a"),
+        RespondedExistenceRule("k", "r"),
+        RespondedExistenceRule("p", "h"),
+        PrecedenceRule("f", "i"),
+        PrecedenceRule("k", "l"),
+        ChainPrecedenceRule("f", "l"),
+        ResponseRule("k", "qq2"),
     ]
     # rules = [
     #    ChainResponseRule("ER Registration", "ER Triage"),
@@ -747,18 +755,7 @@ if __name__ == "__main__":
     #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
     # ]
 
-    rules = [
-        AtMostOnceRule("b"),
-        RespondedExistenceRule("l", "e"),
-        PrecedenceRule("b", "e"),
-        ResponseRule("k", "m"),
-        ResponseRule("j", "b"),
-        RespondedExistenceRule("f", "k"),
-        RespondedExistenceRule("m", "f"),
-        RespondedExistenceRule("d", "a"),
-        RespondedExistenceRule("k", "j"),
-    ]
-    log = pm4py.read_xes("./inductive_miner/log_1.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_148.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
@@ -769,13 +766,15 @@ if __name__ == "__main__":
     log_org = log.copy()
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance
+        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0
     )
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(normalize_tree(model))
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
-    print(f"Fit: {fitness}, prec: {prec}")
+    print(
+        f"Fit: {fitness}, prec: {prec}, F1: {2 * fitness * prec / (fitness + prec) if fitness + prec > 0 else 0}"
+    )
     rule_conf = rule_conformance_apply(
         model, rules, alphabet=set(log_org["concept:name"].unique())
     )
