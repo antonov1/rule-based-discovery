@@ -30,7 +30,7 @@ T = TypeVar("T")
 ERROR_MESSAGE_CODE_GENERATION_DECLARE = (
     "Failed to generate DECLARE rules. Follow strictly the output format, e.g.,"
     " ```python"
-    "rule1 = AtMost1('A') "
+    "rule1 = AtMostOnce('A') "
     "```."
 )
 
@@ -124,7 +124,7 @@ def code_extraction(code_snippet: str, activities=None):
     if has_imports(match.group(1)):
         raise ValueError("Code snippet should not contain any import statements!")
     namespace = {
-        "AtMost1": AtMostOnceRule,
+        "AtMostOnce": AtMostOnceRule,
         "CoExistence": CoExistenceRule,
         "End": EndRule,
         "Existence": ExistenceRule,
@@ -138,8 +138,10 @@ def code_extraction(code_snippet: str, activities=None):
         "ChainPrecedence": ChainPrecedenceRule,
     }
     code = match.group(1).strip()
+    print(f"Extracted code snippet:\n{code}")
     # remove all leading indentation from the code
     code = process_code(code, activities=activities)
+    print(f"Processed code:\n{code}")
     code = re.sub(r"^\s+", "", code, flags=re.MULTILINE)
     print(f"Extracted code:\n{code}")
 
@@ -165,7 +167,7 @@ def process_code(code, activities=None):
                 node.value.func.id if isinstance(node.value.func, ast.Name) else None
             )
             if rule_type not in [
-                "AtMost1",
+                "AtMostOnce",
                 "CoExistence",
                 "End",
                 "Existence",
@@ -179,7 +181,7 @@ def process_code(code, activities=None):
                 "ChainPrecedence",
             ]:
                 raise ValueError(
-                    f"Invalid rule type: {rule_type}. Allowed types are: AtMost1, CoExistence, End, Existence, Init, Precedence, RespondedExistence, Response, NotCoExistence."
+                    f"Invalid rule type: {rule_type}. Allowed types are: AtMostOnce, CoExistence, End, Existence, Init, Precedence, RespondedExistence, Response, NotCoExistence, ChainResponse, ChainPrecedence."
                 )
 
             args = []

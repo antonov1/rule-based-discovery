@@ -304,7 +304,7 @@ if __name__ == "__main__":
         {
             "name": "26. NotSuccession violated by IM's generalization capabilities",
             "log": [["A", "B"], ["B", "C"]],
-            "rules": [NotSuccessionRule("A", "C")],
+            "rules": [NotSuccessionRule("A", "C"), CoExistenceRule("A", "B")],
             "why": (
                 "The log contains A followed by B, and B followed by C, which may lead IM to generalize and allow A followed by C",
             ),
@@ -384,6 +384,20 @@ if __name__ == "__main__":
         prec = precision_alignment_tree(log_org, model_constrainted_ed)
         print(
             f"RIM (ED REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_ed}"
+        )
+        model_constrainted_naive = normalize_tree(
+            apply_IM_with_rules(
+                ex["log"],
+                ex["rules"],
+                repair_mode=RepairVariant.Naive,
+            )
+        )
+        rule_conf = conformance(model_constrainted_ed, ex["rules"], alphabet)[0]
+
+        fit = fitness_alignment(log_org, model_constrainted_ed)
+        prec = precision_alignment_tree(log_org, model_constrainted_ed)
+        print(
+            f"RIM (NAIVE REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_ed}"
         )
 
         print("====================================")

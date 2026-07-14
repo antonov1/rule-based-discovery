@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Set, Union
 
 import pandas as pd
 import pm4py
@@ -15,19 +15,21 @@ from inductive_miner.fallthroughs import (
     empty,
     flower_model,
     n_tau,
+    po,
     rule_seq,
     s_tau,
+    xor,
 )
 from inductive_miner.im_utils import (
     add_child,
-    assert_rules_supported,
     base_cases,
     intersection_of_logs,
     repair_mechanism,
 )
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from rules.rule_utils import product_automaton
 from rules import *
-from inductive_miner.im_utils import RepairVariant
+from inductive_miner.im_utils import normalize_tree, RepairVariant
 from metrics.fitness import fitness_token_based_tree
 from metrics.precision import precision_token_based_tree
 from metrics.rule_conformance import (
@@ -36,7 +38,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def handle_empty_traces(
@@ -202,9 +204,9 @@ def apply_BIM_with_rules(
             )
             projected_rules = cut.project_rules(rules, groups)
             for i in range(len(sublogs)):
-                assert_rules_supported(
-                    "In rule refinement:", sublogs[i], projected_rules[i]
-                )
+                # assert_rules_supported(
+                #    "In rule refinement:", sublogs[i], projected_rules[i]
+                # )
 
                 child_node = apply_BIM_with_rules(
                     sublogs[i],
@@ -289,6 +291,24 @@ def filter_log_by_rules(log, rules):
     return filtered_log
 
 
+def __check_satisfiability(alphabet: Set[str], rules: List[AbstractRule]):
+    # extend the alphabet with the rules' activities
+    for r in rules:
+        # if it has attributes activity_a and activity_b take them
+        activity_a = getattr(r, "activity_a", None)
+        activity_b = getattr(r, "activity_b", None)
+        target = getattr(r, "target_activity", None)
+
+        if activity_a is not None and activity_b is not None:
+            alphabet.add(activity_a)
+            alphabet.add(activity_b)
+        elif target is not None:
+            alphabet.add(target)
+    automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
+    product = product_automaton(rules, alphabet, automata_by_rule)
+    return len(product.final_states) > 0
+
+
 def apply_IM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
@@ -297,9 +317,7 @@ def apply_IM_with_rules(
     repair_mode=RepairVariant.EditDistance,
     noise_threshold: float = 0,
 ):
-    # print(
-    #   f"Applying IM with rules: {[str(r) for r in rules]} and noise threshold: {noise_threshold}"
-    # )
+    set(e for trace in log for e in trace)
     # print(f"Rules are: {rules}")
     # print(f"Log is: {log}")
     # First, we can apply the rules to filter the log
@@ -308,18 +326,8 @@ def apply_IM_with_rules(
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
 
     # Check if the support of rule combos is bigger than 0, if not, raise Exception
-    act_in_log = set([e for trace in log for e in trace])
-
-    if rules:
-        filtered_log = filter_log_by_rules(log, rules)
-        # print(f"The filtered log is: {filtered_log}")
-        if len(filtered_log) == 0:
-            act_in_log = set([e for trace in log for e in trace])
-            # export the log
-
-            raise Exception(
-                f"The support of the rules {rules} is 0. Activities are {act_in_log}."
-            )
+    # if not __check_satisfiability(alphabet, rules):
+    #    raise Exception(f"The set of rules {rules} is unsatisfiable. Activities are {alphabet}.")
     process_tree = ProcessTree()
 
     dfg = DirectlyFollowsGraph(log)
@@ -336,17 +344,24 @@ def apply_IM_with_rules(
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
     # Check if the log has exactly one activity or empty traces
 
-    empty_traces = handle_empty_traces(
-        log,
-        apply_IM_with_rules,
-        rules=rules,
-        repair_mode=repair_mode,
-        noise_threshold=noise_threshold,
+    empty_traces = (
+        handle_empty_traces(
+            log,
+            apply_IM_with_rules,
+            rules=rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
+        )
+        if "ArtificialNoneNode" in dfg_graph
+        else None
     )
+
     if empty_traces is not None:
         return empty_traces
 
-    if len(dfg_graph.nodes) <= 1:
+    if len(dfg_graph.nodes) <= 1 or (
+        len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in dfg_graph
+    ):
         # print(f"Applying base case to log {log}")
         process_tree = base_cases(
             log,
@@ -354,6 +369,8 @@ def apply_IM_with_rules(
             dfg_graph,
             apply_IM_with_rules,
             rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
         )
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
@@ -395,9 +412,9 @@ def apply_IM_with_rules(
             )
             projected_rules = cut.project_rules(rules, groups)
             for i in range(len(sublogs)):
-                assert_rules_supported(
-                    "In rule refinement:", sublogs[i], projected_rules[i]
-                )
+                # assert_rules_supported(
+                #    "In rule refinement:", sublogs[i], projected_rules[i]
+                # )
 
                 child_node = apply_IM_with_rules(
                     sublogs[i],
@@ -434,22 +451,22 @@ def apply_IM_with_rules(
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
     order_of_fall_throughs = [
-        empty,
         activity_once,
         activity_concur,
         s_tau,
         n_tau,
         flower_model,
-        rule_seq,
+        po,
+        xor,
     ]
     name_of_fall_throughs = [
-        "empty",
         "once",
         "concur",
         "s_tau",
         "tau",
         "flower",
-        "rseq",
+        "po",
+        "xor",
     ]
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
@@ -474,6 +491,7 @@ def apply_IM_with_rules(
 
             res.parent = process_tree.parent
             return res
+    print(f"We have reached the final fall-through: {log}, rules are: {rules}")
     return ProcessTree()
 
 
@@ -721,46 +739,42 @@ if __name__ == "__main__":
     NotCoExistence(Admission NC, Release A)
     """
     rules = [
-        ResponseRule("ER Sepsis Triage", "LacticAcid"),
-        ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
-        InitializationRule("ER Registration"),
-        NotSuccessionRule("Admission NC", "Release A"),
+        PrecedenceRule("r", "l"),
+        PrecedenceRule("n", "a"),
+        RespondedExistenceRule("k", "r"),
+        RespondedExistenceRule("p", "h"),
+        PrecedenceRule("f", "i"),
+        PrecedenceRule("k", "l"),
+        ChainPrecedenceRule("f", "l"),
+        ResponseRule("k", "qq2"),
     ]
-    rules = [
-        ChainResponseRule("ER Registration", "ER Triage"),
-        InitializationRule("ER Registration"),
-        AtMostOnceRule("ER Registration"),
-        ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
-    ]
-    rules = [
-        RespondedExistenceRule("h", "a"),
-        ResponseRule("k", "h"),
-        RespondedExistenceRule("f", "p"),
-        AtMostOnceRule("l"),
-        RespondedExistenceRule("a", "t"),
-        PrecedenceRule("t", "o"),
-        RespondedExistenceRule("l", "p"),
-        RespondedExistenceRule("b", "j"),
-        ChainPrecedenceRule("i", "c"),
-        RespondedExistenceRule("i", "t"),
-    ]
-    log = pm4py.read_xes("./inductive_miner/log_41.xes", variant="iterparse")
+    # rules = [
+    #    ChainResponseRule("ER Registration", "ER Triage"),
+    #    InitializationRule("ER Registration"),
+    #    AtMostOnceRule("ER Registration"),
+    #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
+    # ]
+
+    log = pm4py.read_xes("./inductive_miner/log_148.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
     log = pm4py.convert_to_dataframe(log)
 
+    # log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log_org = log.copy()
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance
+        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0
     )
     pm4py.view_process_tree(model)  # Visualize the process tree
-    print(model)
+    print(normalize_tree(model))
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
-    print(f"Fit: {fitness}, prec: {prec}")
+    print(
+        f"Fit: {fitness}, prec: {prec}, F1: {2 * fitness * prec / (fitness + prec) if fitness + prec > 0 else 0}"
+    )
     rule_conf = rule_conformance_apply(
         model, rules, alphabet=set(log_org["concept:name"].unique())
     )

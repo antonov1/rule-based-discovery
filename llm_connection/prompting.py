@@ -35,7 +35,7 @@ def generate_declare_prompt(process_description, activities):
         "DECLARE rules based on a description of a process or its constraints.\n\n"
         "The activities involved in the process are: " + ", ".join(activities) + ".\n\n"
         "Use only the following rules:\n"
-        "- AtMost1(A): Activity A occurs at most once in every trace.\n"
+        "- AtMostOnce(A): Activity A occurs at most once in every trace.\n"
         "- Init(A): Each trace starts with activity A.\n"
         "- End(A): Each trace ends with activity A.\n"
         "- Existence(A): Activity A occurs at least once per trace.\n"

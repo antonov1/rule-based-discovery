@@ -11,6 +11,7 @@ class RepairVariant(Enum):
     EventLevel = "event_level"
     TraceLevel = "trace_level"
     EditDistance = "edit_distance"
+    Naive = "naive"
 
 
 REPAIR_VARIANT = RepairVariant.EditDistance
@@ -124,22 +125,22 @@ def base_cases(
     """
     nodes = set(dfg_graph.nodes)
 
-    if "ArtificialNoneNode" in nodes:
-        raise Exception(f"Base case error: log has empty traces.")
-
     if not nodes:
         return process_tree
 
-    if len(nodes) == 1:
-        return _build_single_activity_tree(log, dfg_graph, nodes, im_function, rules)
+    if len(nodes) == 1 or (len(nodes) == 2 and "ArtificialNoneNode" in nodes):
+        tree = _build_single_activity_tree(
+            log, dfg_graph, nodes, im_function, rules, **kwargs
+        )
+        return tree if tree is not None else process_tree
 
     raise Exception(
-        f"Base case error: log has multiple activities but no cut was found."
+        f"Base case error: log has multiple activities but no cut was found. Log is: {log}, process_tree is: {process_tree}, dfg_graph is: {dfg_graph}, nodes are: {nodes}"
     )
 
 
 def _build_single_activity_tree(
-    log, dfg_graph, nodes, im_function, rules
+    log, dfg_graph, nodes, im_function, rules, **kwargs
 ) -> ProcessTree:
     if not nodes:
         return ProcessTree()  # Tau
@@ -161,6 +162,8 @@ def _build_single_activity_tree(
                     unsat_rules,
                     im_function,
                     rules,
+                    repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
+                    noise_threshold=kwargs.get("noise_threshold", 0.0),
                 )
 
         return _build_loop_tree(do_first=None, redo=activity)
@@ -170,7 +173,14 @@ def _build_single_activity_tree(
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
 
         if unsat_rules:
-            return repair_mechanism(log, unsat_rules, im_function, rules)
+            return repair_mechanism(
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
+            )
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -189,6 +199,22 @@ def _build_loop_tree(do_first=None, redo=None) -> ProcessTree:
     root.children.extend([first_child, second_child])
 
     return root
+
+
+def supported_rules_alphabet(alphabet, rules):
+    if not rules:
+        return []
+
+    filtered = []
+
+    for rule in rules:
+        if hasattr(rule, "target_activity"):
+            if rule.target_activity in alphabet:
+                filtered.append(rule)
+        elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
+            if rule.activity_a in alphabet and rule.activity_b in alphabet:
+                filtered.append(rule)
+    return filtered
 
 
 def supported_rules(log, rules):
@@ -334,6 +360,8 @@ def repair_mechanism(
         with open("repair_timings_edit_distance.txt", "a") as f:
             f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
         return repair
+    elif repair_mode == RepairVariant.Naive:
+        return None
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")
 
@@ -526,15 +554,20 @@ def apply_edit_distance_repair(
     # Find the traces that are not accepted by the product automaton
     original_log = log.copy()
     alphabet = set(e for trace in log for e in trace)
+    for rule in rules or []:
+        if hasattr(rule, "activity_a"):
+            alphabet.add(rule.activity_a)
+        if hasattr(rule, "activity_b"):
+            alphabet.add(rule.activity_b)
+        if hasattr(rule, "target_activity"):
+            alphabet.add(rule.target_activity)
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
-    print(
-        f"Product automaton has {len(product.states)} states and {sum(len(t) for t in product.transitions.values())} transitions, transitions are {product.transitions}"
-    )
     if not len(product.final_states):
         raise Exception(
             f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
         )
+    # We filter out satisfied traces first to avoid unnecessary repair attempts
     for rule in unsat_rules:
         log = rule.repair(log)
 

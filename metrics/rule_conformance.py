@@ -21,6 +21,14 @@ def weighted_conformance(
     if not len(rules):
         return 1
     ts = pm4py.convert.convert_to_reachability_graph(model)
+    for r in rules or []:
+        if hasattr(r, "target_activity"):
+            alphabet.add(r.target_activity)
+        if hasattr(r, "activity_a"):
+            alphabet.add(r.activity_a)
+        if hasattr(r, "activity_b"):
+            alphabet.add(r.activity_b)
+
     nfa = transition_system_to_nfa(ts, alphabet=alphabet)
     # constructing accept_all automaton
     sup_unsat = []
@@ -28,7 +36,6 @@ def weighted_conformance(
     sup_all = []
 
     accept_all = DFA.universal_language(input_symbols=set(alphabet))
-
     for rule in rules:
         rule_automaton = rule.to_automaton(alphabet=alphabet)
         rule.apply(log)
@@ -50,6 +57,14 @@ def conformance(model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str
     if not len(rules):
         return 1
     ts = pm4py.convert.convert_to_reachability_graph(model)
+    for r in rules or []:
+        if hasattr(r, "target_activity"):
+            alphabet.add(r.target_activity)
+        if hasattr(r, "activity_a"):
+            alphabet.add(r.activity_a)
+        if hasattr(r, "activity_b"):
+            alphabet.add(r.activity_b)
+
     nfa = transition_system_to_nfa(ts, alphabet=alphabet)
     # constructing accept_all automaton
     unsat_rules = []

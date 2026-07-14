@@ -3,6 +3,7 @@ from typing import Any, List, Union
 
 from rules import (
     AbstractRule,
+    AtMostOnceRule,
     ChainPrecedenceRule,
     ChainResponseRule,
     CoExistenceRule,
@@ -41,11 +42,14 @@ class BaseCut(ABC):
         for rule in rules:
             # check if it has target activity
             if hasattr(rule, "target_activity"):
-
+                projected = False
                 for i in range(len(groups)):
                     if rule.target_activity in groups[i]:
                         projected_rules[i].append(rule)
+                        projected = True
                         break
+                if not projected:
+                    projected_rules[0].append(rule)
             elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
                 group_a_idx = None
                 group_b_idx = None
@@ -55,24 +59,33 @@ class BaseCut(ABC):
                     if rule.activity_b in groups[i]:
                         group_b_idx = i
                 if group_a_idx is None or group_b_idx is None:
-                    # not relevant anymore
-                    continue
+                    if group_a_idx is not None:
+                        projected_rules[group_a_idx].append(rule)
+                    elif group_b_idx is not None:
+                        projected_rules[group_b_idx].append(rule)
                 if group_a_idx is not None and group_b_idx is not None:
                     if group_a_idx != group_b_idx:
                         # We have just eliminated a rule
                         if isinstance(rule, ChainResponseRule):
-                            projected_rules[group_a_idx].append(
-                                EndRule(rule.activity_a)
-                            )
                             projected_rules[group_b_idx].append(
                                 InitializationRule(rule.activity_b)
                             )
+                            projected_rules[group_a_idx].extend(
+                                [
+                                    AtMostOnceRule(rule.activity_a),
+                                    EndRule(rule.activity_a),
+                                ]
+                            )
+
                         elif isinstance(rule, ChainPrecedenceRule):
-                            projected_rules[group_b_idx].append(
-                                InitializationRule(rule.activity_b)
-                            )
                             projected_rules[group_a_idx].append(
                                 EndRule(rule.activity_a)
+                            )
+                            projected_rules[group_b_idx].extend(
+                                [
+                                    AtMostOnceRule(rule.activity_b),
+                                    InitializationRule(rule.activity_b),
+                                ]
                             )
 
                         elif isinstance(rule, ResponseRule) or isinstance(
@@ -83,6 +96,10 @@ class BaseCut(ABC):
                             projected_rules[group_b_idx].append(
                                 ExistenceRule(rule.activity_b)
                             )
+                            if isinstance(rule, RespondedExistenceRule):
+                                projected_rules[group_a_idx].append(
+                                    ExistenceRule(rule.activity_a)
+                                )
                         elif isinstance(rule, CoExistenceRule):
                             # Both should exist, otherwise, hard
                             projected_rules[group_a_idx].append(
