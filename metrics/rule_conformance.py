@@ -9,7 +9,10 @@ from pm4py.algo.simulation.playout.petri_net.algorithm import (
 )
 from pm4py.objects.process_tree.obj import ProcessTree
 from pm4py.objects.transition_system.obj import TransitionSystem
-from rules import AbstractRule
+from rules import *
+from functools import reduce
+
+from pm4py.objects.petri_net.obj import PetriNet
 
 
 def weighted_conformance(
@@ -17,19 +20,25 @@ def weighted_conformance(
     rules: List[AbstractRule],
     alphabet: Set[str],
     log: List[List[str]],
+    version="WF-NET",
 ):
     if not len(rules):
         return 1
-    ts = pm4py.convert.convert_to_reachability_graph(model)
-    for r in rules or []:
-        if hasattr(r, "target_activity"):
-            alphabet.add(r.target_activity)
-        if hasattr(r, "activity_a"):
-            alphabet.add(r.activity_a)
-        if hasattr(r, "activity_b"):
-            alphabet.add(r.activity_b)
+    nfa = None
+    if version == "WF-NET":
+        net, _, _ = pm4py.convert_to_petri_net(model)
+        nfa = wf_net_to_DECLARE(net)
+    else:
+        ts = pm4py.convert.convert_to_reachability_graph(model)
+        for r in rules or []:
+            if hasattr(r, "target_activity"):
+                alphabet.add(r.target_activity)
+            if hasattr(r, "activity_a"):
+                alphabet.add(r.activity_a)
+            if hasattr(r, "activity_b"):
+                alphabet.add(r.activity_b)
 
-    nfa = transition_system_to_nfa(ts, alphabet=alphabet)
+        nfa = transition_system_to_nfa(ts, alphabet=alphabet)
     # constructing accept_all automaton
     sup_unsat = []
     unsat_rules = []
@@ -53,19 +62,26 @@ def weighted_conformance(
     return 1 - sum(sup_unsat) / sum(sup_all), unsat_rules
 
 
-def conformance(model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str]):
+def conformance(
+    model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str], version="WF-NET"
+):
     if not len(rules):
         return 1
-    ts = pm4py.convert.convert_to_reachability_graph(model)
-    for r in rules or []:
-        if hasattr(r, "target_activity"):
-            alphabet.add(r.target_activity)
-        if hasattr(r, "activity_a"):
-            alphabet.add(r.activity_a)
-        if hasattr(r, "activity_b"):
-            alphabet.add(r.activity_b)
+    nfa = None
+    if version == "WF-NET":
+        net, _, _ = pm4py.convert_to_petri_net(model)
+        nfa = wf_net_to_DECLARE(net)
+    else:
+        ts = pm4py.convert.convert_to_reachability_graph(model)
+        for r in rules or []:
+            if hasattr(r, "target_activity"):
+                alphabet.add(r.target_activity)
+            if hasattr(r, "activity_a"):
+                alphabet.add(r.activity_a)
+            if hasattr(r, "activity_b"):
+                alphabet.add(r.activity_b)
 
-    nfa = transition_system_to_nfa(ts, alphabet=alphabet)
+        nfa = transition_system_to_nfa(ts, alphabet=alphabet)
     # constructing accept_all automaton
     unsat_rules = []
     accept_all = DFA.universal_language(input_symbols=set(alphabet))
@@ -134,6 +150,97 @@ def transition_system_to_nfa(
     )
 
 
+# ------ WF-Nets ------- #
+def modified_end_DFA(end_transitions: List[str], alphabet: Set[str]) -> DFA:
+    q0 = "q0"  # initial state
+    q1 = "q1"  # accepting state
+
+    transitions = {
+        q0: {symbol: q0 for symbol in alphabet if symbol not in end_transitions},
+        q1: {symbol: q1 for symbol in alphabet if symbol in end_transitions},
+    }
+    for end in end_transitions:
+        transitions[q0][end] = q1
+    for symbol in alphabet:
+        if symbol not in end_transitions:
+            transitions[q1][symbol] = q0
+    return DFA(
+        states={q0, q1},
+        input_symbols=set(alphabet),
+        transitions=transitions,
+        initial_state=q0,
+        final_states={q1},
+    )
+
+
+def extended_alternate_precedence(
+    before: Set[str],
+    after: Set[str],
+    alphabet: Set[str],
+) -> DFA:
+    q0 = "q0"
+    q1 = "q1"
+    q2 = "q2"
+    transitions = {
+        q0: {},
+        q1: {},
+        q2: {},
+    }
+
+    for symbol in alphabet:
+        if symbol in before:
+            transitions[q0][symbol] = q1
+        elif symbol in after:
+            transitions[q0][symbol] = q2
+        else:
+            transitions[q0][symbol] = q0
+
+        if symbol in before:
+            transitions[q1][symbol] = q2
+        elif symbol in after:
+            transitions[q1][symbol] = q0
+        else:
+            transitions[q1][symbol] = q1
+
+        # Once violated, remain rejected
+        transitions[q2][symbol] = q2
+
+    return DFA(
+        states={q0, q1, q2},
+        input_symbols=alphabet,
+        transitions=transitions,
+        initial_state=q0,
+        final_states={q0, q1},
+    )
+
+
+def wf_net_to_DECLARE(net: PetriNet) -> DFA:
+    # check if it is a WF-net
+    if not pm4py.algo.analysis.workflow_net.variants.petri_net.apply(net):
+        raise ValueError("The provided Petri net is not a WF-net.")
+    start_places = [p for p in net.places if len(p.in_arcs) == 0]
+    start_transitions = [t for p in start_places for t in p.out_arcs]
+    dfas = []
+    alphabet = {t.name for t in net.transitions}
+    for place in net.places:
+        print(
+            f"Processing place: {place.name}, in_arcs: {place.in_arcs}, out_arcs: {place.out_arcs}"
+        )
+        if len(place.in_arcs) >= 1 and len(place.out_arcs) >= 1:
+            before = {t.source for t in place.in_arcs}
+            after = {t.target for t in place.out_arcs}
+            dfas.append(extended_alternate_precedence(before, after, alphabet=alphabet))
+        elif len(place.in_arcs) >= 1 and len(place.out_arcs) == 0:
+            end_transitions = {t.source for t in place.in_arcs}
+            dfas.append(modified_end_DFA(end_transitions, alphabet=alphabet))
+        elif len(place.in_arcs) == 0 and len(place.out_arcs) >= 1:
+            start_transitions = {t.target for t in place.out_arcs}
+            dfas.append(
+                AtMostOnceRule(start_transitions).to_automaton(alphabet=alphabet)
+            )
+    return reduce(lambda acc, aut: acc.intersection(aut), dfas)
+
+
 # ------ Simulation-based results ------- #
 
 
@@ -161,3 +268,12 @@ def apply(model: ProcessTree, rules: List[AbstractRule]):
             # )
     val = 1 - len(unsat_rules) / len(rules) if rules else 1
     return val, unsat_rules
+
+
+if __name__ == "__main__":
+    from pm4py.algo.simulation.tree_generator.algorithm import apply as tree_gen_apply
+
+    tree = tree_gen_apply()
+    # transform it to a pnet
+    net, im, fm = pm4py.convert_to_petri_net(tree)
+    wf_net_to_DECLARE(net)
