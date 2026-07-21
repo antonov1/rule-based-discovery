@@ -7,7 +7,6 @@ from typing import Dict, List, Set, TypeAlias
 
 from automata.fa.dfa import DFA
 from automata.fa.nfa import NFA
-from rules.abstract_rule import AbstractRule
 from rules import (
     AbstractRule,
     ChainPrecedenceRule,

@@ -38,7 +38,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def handle_empty_traces(
@@ -314,7 +314,7 @@ def apply_IM_with_rules(
     rules: List[AbstractRule] = [],
     activity_key="concept:name",
     case_key="case:concept:name",
-    repair_mode=RepairVariant.EditDistance,
+    repair_mode=RepairVariant.EventLevel,
     noise_threshold: float = 0,
 ):
     set(e for trace in log for e in trace)
@@ -739,12 +739,14 @@ if __name__ == "__main__":
     NotCoExistence(Admission NC, Release A)
     """
     rules = [
-        ChainPrecedenceRule("r", "h"),
-        ExistenceRule("c"),
+        PrecedenceRule("p", "j"),
+        NotCoExistenceRule("j", "n"),
+        EndRule("a"),
+        PrecedenceRule("d", "h"),
+        AtMostOnceRule("e"),
+        NotSuccessionRule("o", "d"),
+        ChainResponseRule("c", "n"),
         ExistenceRule("f"),
-        NotCoExistenceRule("d", "p"),
-        ChainResponseRule("h", "r"),
-        PrecedenceRule("e", "o"),
     ]
     # rules = [
     #    ChainResponseRule("ER Registration", "ER Triage"),
@@ -753,7 +755,7 @@ if __name__ == "__main__":
     #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
     # ]
 
-    log = pm4py.read_xes("./inductive_miner/log_0.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_4.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
@@ -764,7 +766,7 @@ if __name__ == "__main__":
     log_org = log.copy()
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0
+        log, rules=rules, repair_mode=RepairVariant.EventLevel, noise_threshold=0
     )
     pm4py.view_process_tree(model)  # Visualize the process tree
     print(normalize_tree(model))
