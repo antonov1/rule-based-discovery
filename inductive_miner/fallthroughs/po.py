@@ -18,6 +18,7 @@ from rules import (
     ChainPrecedenceRule,
     ChainResponseRule,
     NotCoExistenceRule,
+    ResponseRule,
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
@@ -221,6 +222,35 @@ def merge_groups_connected_by_chain_rules(
     return groups
 
 
+def merge_components_by_scc(
+    components: List[Set[str]],
+    activity_graph: nx.DiGraph,
+) -> List[Set[str]]:
+    component_of = {
+        activity: i for i, component in enumerate(components) for activity in component
+    }
+
+    merge_graph = nx.Graph()
+    merge_graph.add_nodes_from(range(len(components)))
+
+    for scc in nx.strongly_connected_components(activity_graph):
+        component_ids = {
+            component_of[activity] for activity in scc if activity in component_of
+        }
+
+        for component_id in component_ids:
+            merge_graph.add_node(component_id)
+
+        component_ids = list(component_ids)
+        for i in range(len(component_ids) - 1):
+            merge_graph.add_edge(component_ids[i], component_ids[i + 1])
+
+    return [
+        set().union(*(components[i] for i in component_ids))
+        for component_ids in nx.connected_components(merge_graph)
+    ]
+
+
 def calculate_weight(dfg, source, target) -> float:
     """
     Runs Dijkstra, treates DFG weights as inverses
@@ -310,10 +340,10 @@ def detect_rule_based_po(
 
     cdg = build_cdg(rules, alphabet)
 
-    # print(
-    #    f"Constructed CDG with edges: {list(cdg.edges)} "
-    #    f"and nodes: {list(cdg.nodes)}"
-    # )
+    print(
+        f"Constructed CDG with edges: {list(cdg.edges)} "
+        f"and nodes: {list(cdg.nodes)}"
+    )
 
     activity_graph = cdg.subgraph(alphabet).copy()
 
@@ -334,15 +364,15 @@ def detect_rule_based_po(
     if activity_graph.number_of_edges() == 0 and not start_nodes and not end_nodes:
         return None
 
-    if not nx.is_directed_acyclic_graph(activity_graph):
-        return None
+    # if not nx.is_directed_acyclic_graph(activity_graph):
+    #    return None
 
     components = get_chain_components(rules, alphabet)
     components = merge_components_by_not_coexistence(components, rules)
-
-    # print(
-    #    "Components after merging by chain rules and not co-existence: " f"{components}"
-    # )
+    components = components = merge_components_by_scc(components, activity_graph)
+    print(
+        "Components after merging by chain rules and not co-existence: " f"{components}"
+    )
 
     component_of = {}
 
@@ -523,7 +553,7 @@ def po_to_parallel_sequence_branches(
     if len(branches) == 1 and len(branches[0]) <= 1:
         return None
 
-    # print(f"Detected PO branches: {branches}")
+    print(f"Detected PO branches: {branches}")
 
     return branches
 
@@ -604,7 +634,7 @@ def apply(
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    # print(f"Detected po is: {po}")
+    print(f"Detected po is: {po}")
 
     if po is None:
         return None
@@ -649,24 +679,24 @@ def apply(
 
 
 if __name__ == "__main__":
-    from rules import ChainResponseRule, ExistenceRule
+    from rules import ChainResponseRule
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
     rules = [
-        ExistenceRule("m"),
         ChainResponseRule("m", "r"),
-        ExistenceRule("r"),
+        ChainPrecedenceRule("r", "m"),
+        ResponseRule("r", "h"),
     ]
 
     # Concrete minimized version of the data
     # many traces are ["m", "r"], with one trace ["r", "m", "r"].
     log = (
-        [["m", "r"] for _ in range(20)]
-        + [["r", "m", "r"]]
-        + [["m", "r"] for _ in range(20)]
+        [["m", "r", "h"] for _ in range(20)]
+        + [["r", "m", "r", "h"]]
+        + [["m", "r", "h"] for _ in range(20)]
     )
 
-    alphabet = {"m", "r"}
+    alphabet = {"m", "r", "h"}
 
     dfg = DirectlyFollowsGraph(log).graph
 
@@ -677,8 +707,8 @@ if __name__ == "__main__":
     # print(list(dfg.edges(data=True)))
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    # print("Detected PO:")
-    # print(po)
+    print("Detected PO:")
+    print(po)
 
     if po is not None:
         branches = po_to_parallel_sequence_branches(po, rules)

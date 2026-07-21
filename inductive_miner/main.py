@@ -491,7 +491,7 @@ def apply_IM_with_rules(
 
             res.parent = process_tree.parent
             return res
-    print(f"We have reached the final fall-through: {log}, rules are: {rules}")
+    # print(f"We have reached the final fall-through: {log}, rules are: {rules}")
     return ProcessTree()
 
 
@@ -739,14 +739,12 @@ if __name__ == "__main__":
     NotCoExistence(Admission NC, Release A)
     """
     rules = [
-        PrecedenceRule("r", "l"),
-        PrecedenceRule("n", "a"),
-        RespondedExistenceRule("k", "r"),
-        RespondedExistenceRule("p", "h"),
-        PrecedenceRule("f", "i"),
-        PrecedenceRule("k", "l"),
-        ChainPrecedenceRule("f", "l"),
-        ResponseRule("k", "qq2"),
+        ChainPrecedenceRule("r", "h"),
+        ExistenceRule("c"),
+        ExistenceRule("f"),
+        NotCoExistenceRule("d", "p"),
+        ChainResponseRule("h", "r"),
+        PrecedenceRule("e", "o"),
     ]
     # rules = [
     #    ChainResponseRule("ER Registration", "ER Triage"),
@@ -755,7 +753,7 @@ if __name__ == "__main__":
     #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
     # ]
 
-    log = pm4py.read_xes("./inductive_miner/log_148.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_0.xes", variant="iterparse")
     # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
