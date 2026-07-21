@@ -1,4 +1,4 @@
-from collections import Counter
+from itertools import combinations, permutations
 from typing import List
 
 import pandas as pd
@@ -11,123 +11,453 @@ from rules import (
     EndRule,
     ExistenceRule,
     InitializationRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
     PrecedenceRule,
     RespondedExistenceRule,
     ResponseRule,
 )
+from rules.rule_utils import (
+    Activity,
+    build_log_stats,
+    LogStats,
+    minimize_rule_set,
+    reduce_rule_hierarchies,
+)
 
 
-def extract_rules_from_data(
-    data: pd.DataFrame,
-    case_id_col: str = "case:concept:name",
-    activity_col: str = "concept:name",
-):
-    # Convert the DataFrame to an event log
-    cases = data[case_id_col].unique()
-    traces = []
-    for case in cases:
-        case_data = data[data[case_id_col] == case].sort_values(by="time:timestamp")
-        trace = case_data[activity_col].tolist()
-        traces.append(trace)
+def ratio(numerator: int, denominator: int, default: float = 0.0) -> float:
+    return numerator / denominator if denominator else default
 
 
-def check_start_end(log, min_support: float = 0.5):
-    non_empty_traces = [trace for trace in log if trace]
-    total_traces = len(non_empty_traces)
-
-    if total_traces == 0:
-        return {"init_rules": [], "end_rules": []}
-
-    start_counts = Counter(trace[0] for trace in non_empty_traces)
-    end_counts = Counter(trace[-1] for trace in non_empty_traces)
-    init_rules = []
-    for activity, count in start_counts.items():
-        support = count / total_traces
-        confidence = count / total_traces
-        if support >= min_support:
-            init_rules.append((activity, support, confidence))
-
-    end_rules = []
-    for activity, count in end_counts.items():
-        support = count / total_traces
-        confidence = count / total_traces
-        if support >= min_support:
-            end_rules.append((activity, support, confidence))
-    return {"init_rules": init_rules, "end_rules": end_rules}
+def existence_metrics(stats: LogStats, activity: Activity) -> tuple[float, float]:
+    valid = stats.activity_trace_count[activity]
+    support = ratio(valid, stats.trace_count)
+    return support, support
 
 
-def extract(log, min_support: float, min_confidence: float) -> List[AbstractRule]:
-    extracted_rules = []
+def at_most_once_metrics(
+    stats: LogStats,
+    activity: Activity,
+) -> tuple[float, float]:
+    support = ratio(
+        stats.activity_at_most_once_valid[activity],
+        stats.trace_count,
+    )
+    return support, support
 
-    se_rules = check_start_end(log, min_support=min_support)
 
-    for activity, _, _ in se_rules["init_rules"]:
-        rule = InitializationRule(activity)
-        rule.apply(log)
-        if (
-            rule.calc_support() >= min_support
-            and rule.calc_confidence() >= min_confidence
-        ):
-            extracted_rules.append(rule)
+def init_metrics(stats: LogStats, activity: Activity) -> tuple[float, float]:
+    support = ratio(stats.start_count[activity], stats.trace_count)
+    return support, support
 
-    for activity, _, _ in se_rules["end_rules"]:
-        rule = EndRule(activity)
-        rule.apply(log)
-        if (
-            rule.calc_support() >= min_support
-            and rule.calc_confidence() >= min_confidence
-        ):
-            extracted_rules.append(rule)
-    unary_activities = sorted(set(a for trace in log for a in trace))
-    binary_pairs = {
-        (a, b) for a in unary_activities for b in unary_activities if a != b
-    }
 
-    for act in sorted(unary_activities):
-        for rule_cls in [ExistenceRule, AtMostOnceRule]:
-            rule = rule_cls(act)
-            rule.apply(log)
-            if (
-                rule.calc_support() >= min_support
-                and rule.calc_confidence() >= min_confidence
-            ):
-                extracted_rules.append(rule)
+def end_metrics(stats: LogStats, activity: Activity) -> tuple[float, float]:
+    support = ratio(stats.end_count[activity], stats.trace_count)
+    return support, support
 
-    seen = set()
-    for pair in binary_pairs:
-        if len(pair) != 2:
-            continue
 
-        a, b = pair
+def responded_existence_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
 
-        candidate_rules = [
-            CoExistenceRule(a, b),
+    support = ratio(
+        stats.responded_existence_support_valid[key],
+        stats.trace_count,
+    )
+
+    count_a = stats.activity_trace_count[a]
+    confidence = ratio(
+        stats.responded_existence_valid[key],
+        count_a,
+        default=1.0,
+    )
+
+    return support, confidence
+
+
+def response_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
+
+    support = ratio(
+        stats.response_support_valid[key],
+        stats.trace_count,
+    )
+
+    confidence = ratio(
+        stats.response_valid[key],
+        stats.activity_trace_count[a],
+        default=1.0,
+    )
+
+    return support, confidence
+
+
+def chain_response_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
+
+    support = ratio(
+        stats.chain_response_support_valid[key],
+        stats.trace_count,
+    )
+
+    confidence = ratio(
+        stats.chain_response_valid[key],
+        stats.activity_trace_count[a],
+        default=1.0,
+    )
+
+    return support, confidence
+
+
+def precedence_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
+
+    support = ratio(
+        stats.precedence_support_valid[key],
+        stats.trace_count,
+    )
+
+    confidence = ratio(
+        stats.precedence_valid[key],
+        stats.activity_trace_count[b],
+        default=1.0,
+    )
+
+    return support, confidence
+
+
+def chain_precedence_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
+
+    support = ratio(
+        stats.chain_precedence_support_valid[key],
+        stats.trace_count,
+    )
+
+    confidence = ratio(
+        stats.chain_precedence_valid[key],
+        stats.activity_trace_count[b],
+        default=1.0,
+    )
+
+    return support, confidence
+
+
+def not_succession_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    key = (a, b)
+
+    support = ratio(
+        stats.not_succession_support_valid[key],
+        stats.trace_count,
+    )
+
+    count_a = stats.activity_trace_count[a]
+    confidence = ratio(
+        stats.not_succession_valid[key],
+        count_a,
+        default=0.0,
+    )
+
+    return support, confidence
+
+
+def coexistence_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    both = stats.co_existence_count[frozenset((a, b))]
+
+    neither = (
+        stats.trace_count
+        - stats.activity_trace_count[a]
+        - stats.activity_trace_count[b]
+        + both
+    )
+
+    valid_traces = both + neither
+    support = ratio(valid_traces, stats.trace_count)
+
+    activated = stats.activity_trace_count[a] + stats.activity_trace_count[b] - both
+    confidence = ratio(both, activated, default=1.0)
+
+    return support, confidence
+
+
+def not_coexistence_metrics(
+    stats: LogStats,
+    a: Activity,
+    b: Activity,
+) -> tuple[float, float]:
+    both = stats.co_existence_count[frozenset((a, b))]
+
+    valid_traces = stats.trace_count - both
+    support = ratio(valid_traces, stats.trace_count)
+
+    confidence = ratio(
+        stats.activity_trace_count[a] + stats.activity_trace_count[b] - both,
+        stats.activity_trace_count[a] + stats.activity_trace_count[b],
+        default=0.0,
+    )
+
+    return support, confidence
+
+
+def passes_thresholds(
+    support: float,
+    confidence: float,
+    min_support: float,
+    min_confidence: float,
+) -> bool:
+    return support >= min_support and confidence >= min_confidence
+
+
+def add_rule(
+    extracted_rules: List[AbstractRule],
+    rule: AbstractRule,
+    stats: LogStats,
+    support: float,
+    confidence: float,
+) -> None:
+    """
+    Populate the existing rule object with metrics computed from LogStats.
+
+    valid_traces_len is reconstructed from support because:
+
+        support = valid_traces_len / trace_count
+    """
+    rule.data_len = stats.trace_count
+    rule.valid_traces_len = round(support * stats.trace_count)
+    rule.sup = support
+    rule.conf = confidence
+
+    extracted_rules.append(rule)
+
+
+def evaluate_and_add(
+    extracted_rules: List[AbstractRule],
+    rule: AbstractRule,
+    stats: LogStats,
+    metrics: tuple[float, float],
+    min_support: float,
+    min_confidence: float,
+) -> bool:
+    """
+    Returns True when the rule passes both thresholds.
+
+    The return value is used to decide whether stronger descendants
+    in the Declare hierarchy need to be evaluated.
+    """
+    support, confidence = metrics
+
+    if not passes_thresholds(
+        support,
+        confidence,
+        min_support,
+        min_confidence,
+    ):
+        return False
+
+    add_rule(
+        extracted_rules,
+        rule,
+        stats,
+        support,
+        confidence,
+    )
+
+    return True
+
+
+def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
+    return log.groupby(case_key)[activity_key].apply(list).tolist()
+
+
+def extract(
+    log,
+    min_support: float,
+    min_confidence: float,
+) -> List[AbstractRule]:
+    if isinstance(log, pd.DataFrame):
+        log = preprocess_log(log)
+    stats, activities = build_log_stats(log)
+
+    extracted_rules: List[AbstractRule] = []
+
+    # Unary constraints
+
+    for activity in activities:
+        evaluate_and_add(
+            extracted_rules,
+            InitializationRule(activity),
+            stats,
+            init_metrics(stats, activity),
+            min_support,
+            min_confidence,
+        )
+
+        evaluate_and_add(
+            extracted_rules,
+            EndRule(activity),
+            stats,
+            end_metrics(stats, activity),
+            min_support,
+            min_confidence,
+        )
+
+        evaluate_and_add(
+            extracted_rules,
+            ExistenceRule(activity),
+            stats,
+            existence_metrics(stats, activity),
+            min_support,
+            min_confidence,
+        )
+
+        evaluate_and_add(
+            extracted_rules,
+            AtMostOnceRule(activity),
+            stats,
+            at_most_once_metrics(stats, activity),
+            min_support,
+            min_confidence,
+        )
+
+    # Directed binary constraints
+
+    for a, b in permutations(activities, 2):
+
+        # Exploit the hierarchy defined by Di Ceccio et al. (2016) to avoid evaluating rules that are guaranteed to fail
+        responded_passed = evaluate_and_add(
+            extracted_rules,
             RespondedExistenceRule(a, b),
-            RespondedExistenceRule(b, a),
-            ResponseRule(a, b),
-            ResponseRule(b, a),
-            PrecedenceRule(a, b),
-            PrecedenceRule(b, a),
-            ChainResponseRule(a, b),
-            ChainResponseRule(b, a),
-            ChainPrecedenceRule(a, b),
-            ChainPrecedenceRule(b, a),
-        ]
+            stats,
+            responded_existence_metrics(stats, a, b),
+            min_support,
+            min_confidence,
+        )
 
-        for rule in candidate_rules:
-            key = (rule.__class__.__name__, tuple(rule.args))
-            if key in seen:
-                continue
-            seen.add(key)
+        if responded_passed:
+            response_passed = evaluate_and_add(
+                extracted_rules,
+                ResponseRule(a, b),
+                stats,
+                response_metrics(stats, a, b),
+                min_support,
+                min_confidence,
+            )
 
-            rule.apply(log)
-            if (
-                rule.calc_support() >= min_support
-                and rule.calc_confidence(log) >= min_confidence
-            ):
-                extracted_rules.append(rule)
+            if response_passed:
+                evaluate_and_add(
+                    extracted_rules,
+                    ChainResponseRule(a, b),
+                    stats,
+                    chain_response_metrics(stats, a, b),
+                    min_support,
+                    min_confidence,
+                )
 
-    return extracted_rules
+        # Precedence hierarchy
+        precedence_root_support, precedence_root_confidence = (
+            responded_existence_metrics(stats, b, a)
+        )
+
+        if passes_thresholds(
+            precedence_root_support,
+            precedence_root_confidence,
+            min_support,
+            min_confidence,
+        ):
+            precedence_passed = evaluate_and_add(
+                extracted_rules,
+                PrecedenceRule(a, b),
+                stats,
+                precedence_metrics(stats, a, b),
+                min_support,
+                min_confidence,
+            )
+
+            if precedence_passed:
+                evaluate_and_add(
+                    extracted_rules,
+                    ChainPrecedenceRule(a, b),
+                    stats,
+                    chain_precedence_metrics(stats, a, b),
+                    min_support,
+                    min_confidence,
+                )
+
+        evaluate_and_add(
+            extracted_rules,
+            NotSuccessionRule(a, b),
+            stats,
+            not_succession_metrics(stats, a, b),
+            min_support,
+            min_confidence,
+        )
+
+    for a, b in combinations(activities, 2):
+
+        evaluate_and_add(
+            extracted_rules,
+            CoExistenceRule(a, b),
+            stats,
+            coexistence_metrics(stats, a, b),
+            min_support,
+            min_confidence,
+        )
+
+        not_succession_ab_support, _ = not_succession_metrics(
+            stats,
+            a,
+            b,
+        )
+
+        not_succession_ba_support, _ = not_succession_metrics(
+            stats,
+            b,
+            a,
+        )
+
+        if (
+            not_succession_ab_support >= min_support
+            and not_succession_ba_support >= min_support
+        ):
+            evaluate_and_add(
+                extracted_rules,
+                NotCoExistenceRule(a, b),
+                stats,
+                not_coexistence_metrics(stats, a, b),
+                min_support,
+                min_confidence,
+            )
+
+    reduced = reduce_rule_hierarchies(extracted_rules)
+    return minimize_rule_set(reduced, log)
 
 
 # Example usage
@@ -144,7 +474,6 @@ if __name__ == "__main__":
         ["A", "C", "E", "A"],
         ["B", "D", "F"],
     ]
-    rules = extract(dataset, 0.5, 0.5)
-    for rule in rules:
-        print(rule)
-        print(rule.get_confidence())
+    print(
+        f"Before reduction: {len(extract(dataset, min_support=0.76, min_confidence=0.76))} rules"
+    )

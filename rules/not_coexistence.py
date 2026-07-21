@@ -59,6 +59,9 @@ class NotCoExistenceRule(AbstractRule):
             for trace in self.apply(data)
             if self.activity_a in trace and self.activity_b in trace
         )
+        if count_a + count_b - count_ab == 0:
+            self.conf = 1
+            return 1
         self.conf = (count_a + count_b - count_ab) / (count_a + count_b)
         return self.conf
 
