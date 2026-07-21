@@ -355,7 +355,7 @@ def handle_chain_components(
     def comparable(i: int, j: int) -> bool:
         return i == j or closure.has_edge(i, j) or closure.has_edge(j, i)
 
-    new_edges = po.edges
+    new_edges = set(po.edges)
     for cmp in components_with_chain_rules:
         for other_cmp in g.nodes:
             if other_cmp == cmp:
@@ -369,8 +369,6 @@ def handle_chain_components(
                     if cost_o_cmp > cost_cmp_o
                     else new_edges.add((cmp, other_cmp))
                 )
-                # print(f"New edges: {new_edges}")
-    po.edges.update(new_edges)
 
     graph = nx.DiGraph()
     graph.add_nodes_from(range(len(po.groups)))
@@ -394,13 +392,16 @@ def handle_chain_components(
     condensed_graph = nx.DiGraph()
     condensed_graph.add_nodes_from(range(len(merged_groups)))
     condensed_graph.add_edges_from(merged_edges)
+    try:
+        reduced_graph = nx.transitive_reduction(condensed_graph)
 
-    reduced_graph = nx.transitive_reduction(condensed_graph)
+        return RuleBasedPO(
+            groups=merged_groups,
+            edges=set(reduced_graph.edges),
+        )
 
-    return RuleBasedPO(
-        groups=merged_groups,
-        edges=set(reduced_graph.edges),
-    )
+    except nx.NetworkXAlgorithmError:
+        return None
 
 
 def detect_rule_based_po(
@@ -451,6 +452,8 @@ def detect_rule_based_po(
 
     components = get_chain_components(rules, alphabet)
     components = merge_components_by_not_coexistence(components, rules)
+    components = merge_components_by_scc(components, activity_graph)
+
     component_of = {}
 
     for i, component in enumerate(components):
@@ -500,34 +503,11 @@ def detect_rule_based_po(
     # a valid partial order: all components are unordered/parallel.
     if block_graph.number_of_nodes() == 0:
         return None
-    components = merge_components_by_scc(components, activity_graph)
     po = RuleBasedPO(
         groups=components,
         edges=set(block_graph.edges),
     )
-    po = handle_chain_components(po, rules, dfg)
-    if po is None:
-        return None
-
-    po_graph = nx.DiGraph()
-    po_graph.add_nodes_from(range(len(po.groups)))
-    po_graph.add_edges_from(po.edges)
-
-    if not nx.is_directed_acyclic_graph(po_graph):
-        return None
-
-    if po_graph.number_of_edges() == 0:
-        return po
-
-    try:
-        reduced_graph = nx.transitive_reduction(po_graph)
-    except nx.NetworkXError:
-        return None
-
-    return RuleBasedPO(
-        groups=po.groups,
-        edges=set(reduced_graph.edges),
-    )
+    return handle_chain_components(po, rules, dfg)
 
 
 def topological_layers_for_nodes(
@@ -719,9 +699,6 @@ def apply(
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    print(f"Rules are: {rules}")
-    print(f"Detected po is: {po}")
-    input("......shd")
 
     if po is None:
         return None
