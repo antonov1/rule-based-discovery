@@ -1,7 +1,7 @@
-import re
+import os
+import random
 import signal
 from contextlib import contextmanager
-from typing import List
 
 import pandas as pd
 import pm4py
@@ -11,11 +11,17 @@ from inductive_miner.main import (
     apply_IM_with_rules,
     preprocess_log as simplify_log,
 )
-from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
 from metrics.precision import precision_alignment_tree
 from metrics.rule_conformance import conformance
+from pm4py.algo.simulation.playout.process_tree.algorithm import (
+    apply as playout_process_tree,
+)
+from pm4py.algo.simulation.tree_generator.algorithm import (
+    apply as simulate_process_tree,
+)
 from pm4py.objects.conversion.log import converter as log_converter
+from rule_extraction.from_data import extract
 
 
 class TimeoutException(Exception):
@@ -49,39 +55,36 @@ def preprocess_log(log):
     return log
 
 
-def evaluate(ids: List[str]):
+def evaluate():
     rows = []
 
-    for i in range(len(ids)):
-        print(f"Starting trial {ids[i]}")
-        log = pm4py.read_xes(f"./experiments/repair_mechanism/logs/log_{ids[i]}.xes")
+    for i in range(0, 1000):
+        print(f"Starting trial {i}")
+
+        process_tree = simulate_process_tree()
+        log = preprocess_log(playout_process_tree(process_tree))
+
+        os.makedirs("./experiments/repair_mechanism/logs", exist_ok=True)
+        pm4py.write_xes(log, f"./experiments/repair_mechanism/logs/log_{i}.xes")
+
         log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)
         preprocessed_log = simplify_log(log)
 
         log["time:timestamp"] = pd.to_datetime(log["time:timestamp"])
         alphabet = set(log["concept:name"].unique())
-        # rules are under ./experiments/repair_mechanism/rules_sampled_{i}.txt
-        with open(
-            f"./experiments/repair_mechanism/rules_sampled_{ids[i]}.txt", "r"
-        ) as f:
-            code = f.read()
-        lines = []
-        for j, line in enumerate(code.splitlines(), start=1):
-            line = line.strip()
-            if not line:
-                continue
-            lines.append(f"r{j} = {line}")
-        code = "\n".join(lines)
-        code = re.sub(r"\(\s*", "('", code)
-        code = re.sub(r"\s*,\s*", "', '", code)
-        code = re.sub(r"\s*\)", "')", code)
-        # wrap it in python
-        code = f"```python\n{code}\n```"
-        print(f"Code for trial {ids[i]}: {code}")
-        _, sampled_rules = code_extraction(code, activities=list(alphabet))
-        if len(sampled_rules) == 0:
+
+        rules = extract(preprocessed_log, min_support=0.5, min_confidence=0.5)
+
+        if len(rules) == 0:
             print(f"No rules extracted, skipping trial {i}")
             continue
+
+        num_sampled = random.randint(1, min(len(rules), 10))
+        sampled_rules = random.sample(rules, num_sampled)
+
+        with open(f"./experiments/repair_mechanism/rules_sampled_{i}.txt", "w") as f:
+            for r in sampled_rules:
+                f.write(str(r) + "\n")
 
         log_org = preprocessed_log.copy()
         for r in sampled_rules:
@@ -92,8 +95,8 @@ def evaluate(ids: List[str]):
             continue
 
         try:
-            with time_limit(420):
-                print(f"Trial {ids[i]}: discovering prepruned model")
+            with time_limit(480):
+                print(f"Trial {i}: discovering prepruned model")
                 model_prepruned = normalize_tree(apply_IM(log_org))
                 fitness_prepruned = fitness_alignment(log, model_prepruned)
                 precision_prepruned = precision_alignment_tree(log, model_prepruned)
@@ -101,7 +104,7 @@ def evaluate(ids: List[str]):
                     model_prepruned, sampled_rules, alphabet
                 )
 
-                print(f"Trial {ids[i]}: trace-level model")
+                print(f"Trial {i}: trace-level model")
                 model_trace = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.TraceLevel
@@ -111,7 +114,7 @@ def evaluate(ids: List[str]):
                 precision_trace = precision_alignment_tree(log, model_trace)
                 conformance_trace = conformance(model_trace, sampled_rules, alphabet)
 
-                print(f"Trial {ids[i]}: event-level model")
+                print(f"Trial {i}: event-level model")
                 model_event = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.EventLevel
@@ -121,7 +124,7 @@ def evaluate(ids: List[str]):
                 precision_event = precision_alignment_tree(log, model_event)
                 conformance_event = conformance(model_event, sampled_rules, alphabet)
 
-                print(f"Trial {ids[i]}: edit-distance model")
+                print(f"Trial {i}: edit-distance model")
                 model_edit = normalize_tree(
                     apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.EditDistance
@@ -132,15 +135,15 @@ def evaluate(ids: List[str]):
                 conformance_edit = conformance(model_edit, sampled_rules, alphabet)
 
         except TimeoutException:
-            print(f"Trial {ids[i]} timed out, skipping")
+            print(f"Trial {i} timed out, skipping")
             continue
         except Exception as e:
-            print(f"Trial {ids[i]} failed: {e}")
+            print(f"Trial {i} failed: {e}")
             continue
 
         rows.append(
             {
-                "trial": ids[i],
+                "trial": i,
                 "num_events": len(log),
                 "num_cases": log["case:concept:name"].nunique(),
                 "num_rules": len(sampled_rules),
@@ -169,11 +172,4 @@ def evaluate(ids: List[str]):
 
 
 if __name__ == "__main__":
-    ids = pd.read_csv("./experiments/repair_mechanism/results.csv")["trial"].tolist()
-    # write the ids to a file
-    # sort the ids
-    ids = sorted(ids)
-    with open("./experiments/repair_mechanism/trials.txt", "w") as f:
-        for id in ids:
-            f.write(str(id) + "\n")
-    evaluate(ids)
+    evaluate()
