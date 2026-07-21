@@ -392,6 +392,9 @@ def handle_chain_components(
     condensed_graph = nx.DiGraph()
     condensed_graph.add_nodes_from(range(len(merged_groups)))
     condensed_graph.add_edges_from(merged_edges)
+    if len(merged_groups) <= 1:
+        # Nothing can be done
+        return None
     try:
         reduced_graph = nx.transitive_reduction(condensed_graph)
 

@@ -1,6 +1,8 @@
+import multiprocessing as mp
 import os
 import random
 import signal
+import traceback
 from contextlib import contextmanager
 
 import pandas as pd
@@ -28,6 +30,18 @@ class TimeoutException(Exception):
     pass
 
 
+def preprocess_log(log):
+    idx = 0
+    time = 0
+    for trace in log:
+        for event in trace:
+            event["case:concept:name"] = f"case_{idx}"
+            event["time:timestamp"] = time
+            time += 1
+        idx += 1
+    return log
+
+
 @contextmanager
 def time_limit(seconds):
     def signal_handler(signum, frame):
@@ -43,133 +57,208 @@ def time_limit(seconds):
         signal.signal(signal.SIGALRM, old_handler)
 
 
-def preprocess_log(log):
-    idx = 0
-    time = 0
-    for trace in log:
-        for event in trace:
-            event["case:concept:name"] = f"case_{idx}"
-            event["time:timestamp"] = time
-            time += 1
-        idx += 1
-    return log
+def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
+    # Reproducibility reasons
+    random.seed(initial_seed + current_idx)
 
-
-def evaluate():
-    rows = []
-
-    for i in range(0, 1000):
-        print(f"Starting trial {i}")
+    try:
+        print(f"[PID {os.getpid()}] Starting trial {current_idx}", flush=True)
 
         process_tree = simulate_process_tree()
         log = preprocess_log(playout_process_tree(process_tree))
 
-        os.makedirs("./experiments/repair_mechanism/logs", exist_ok=True)
-        pm4py.write_xes(log, f"./experiments/repair_mechanism/logs/log_{i}.xes")
+        pm4py.write_xes(
+            log,
+            f"./experiments/repair_mechanism/logs/log_{current_idx}.xes",
+        )
 
-        log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)
+        log = log_converter.apply(
+            log,
+            variant=log_converter.Variants.TO_DATA_FRAME,
+        )
         preprocessed_log = simplify_log(log)
 
         log["time:timestamp"] = pd.to_datetime(log["time:timestamp"])
         alphabet = set(log["concept:name"].unique())
 
-        rules = extract(preprocessed_log, min_support=0.5, min_confidence=0.5)
+        rules = extract(
+            preprocessed_log,
+            min_support=0.5,
+            min_confidence=0.5,
+        )
 
-        if len(rules) == 0:
-            print(f"No rules extracted, skipping trial {i}")
-            continue
+        if not rules:
+            print(f"Trial {current_idx}: no rules extracted", flush=True)
+            return None
 
-        num_sampled = random.randint(1, min(len(rules), 10))
-        sampled_rules = random.sample(rules, num_sampled)
+        sampled_rules = random.sample(
+            rules,
+            random.randint(1, min(len(rules), 10)),
+        )
 
-        with open(f"./experiments/repair_mechanism/rules_sampled_{i}.txt", "w") as f:
-            for r in sampled_rules:
-                f.write(str(r) + "\n")
+        with open(
+            f"./experiments/repair_mechanism/" f"rules_sampled_{current_idx}.txt",
+            "w",
+        ) as file:
+            for rule in sampled_rules:
+                file.write(f"{rule}\n")
 
         log_org = preprocessed_log.copy()
-        for r in sampled_rules:
-            log_org = r.repair(log_org)
+
+        for rule in sampled_rules:
+            log_org = rule.repair(log_org)
 
         if len(log_org) == 0:
-            print(f"All traces were removed by the rules, skipping trial {i}")
-            continue
+            print(f"Trial {current_idx}: all traces removed", flush=True)
+            return None
 
-        try:
-            with time_limit(480):
-                print(f"Trial {i}: discovering prepruned model")
-                model_prepruned = normalize_tree(apply_IM(log_org))
-                fitness_prepruned = fitness_alignment(log, model_prepruned)
-                precision_prepruned = precision_alignment_tree(log, model_prepruned)
-                conformance_prepruned = conformance(
-                    model_prepruned, sampled_rules, alphabet
+        with time_limit(480):
+            model_prepruned = normalize_tree(apply_IM(log_org))
+            fitness_prepruned = fitness_alignment(log, model_prepruned)
+            precision_prepruned = precision_alignment_tree(
+                log,
+                model_prepruned,
+            )
+            conformance_prepruned = conformance(
+                model_prepruned,
+                sampled_rules,
+                alphabet,
+            )
+            pm4py.write_ptml(
+                model_prepruned,
+                f"./experiments/repair_mechanism/models/" f"{current_idx}_p.ptml",
+            )
+
+            model_trace = normalize_tree(
+                apply_IM_with_rules(
+                    log,
+                    rules=sampled_rules,
+                    repair_mode=RepairVariant.TraceLevel,
                 )
+            )
+            fitness_trace = fitness_alignment(log, model_trace)
+            precision_trace = precision_alignment_tree(log, model_trace)
+            conformance_trace = conformance(
+                model_trace,
+                sampled_rules,
+                alphabet,
+            )
+            pm4py.write_ptml(
+                model_trace,
+                f"./experiments/repair_mechanism/models/" f"{current_idx}_t.ptml",
+            )
 
-                print(f"Trial {i}: trace-level model")
-                model_trace = normalize_tree(
-                    apply_IM_with_rules(
-                        log, rules=sampled_rules, repair_mode=RepairVariant.TraceLevel
-                    )
+            model_event = normalize_tree(
+                apply_IM_with_rules(
+                    log,
+                    rules=sampled_rules,
+                    repair_mode=RepairVariant.EventLevel,
                 )
-                fitness_trace = fitness_alignment(log, model_trace)
-                precision_trace = precision_alignment_tree(log, model_trace)
-                conformance_trace = conformance(model_trace, sampled_rules, alphabet)
+            )
+            fitness_event = fitness_alignment(log, model_event)
+            precision_event = precision_alignment_tree(log, model_event)
+            conformance_event = conformance(
+                model_event,
+                sampled_rules,
+                alphabet,
+            )
+            pm4py.write_ptml(
+                model_event,
+                f"./experiments/repair_mechanism/models/" f"{current_idx}_e.ptml",
+            )
 
-                print(f"Trial {i}: event-level model")
-                model_event = normalize_tree(
-                    apply_IM_with_rules(
-                        log, rules=sampled_rules, repair_mode=RepairVariant.EventLevel
-                    )
+            model_edit = normalize_tree(
+                apply_IM_with_rules(
+                    log,
+                    rules=sampled_rules,
+                    repair_mode=RepairVariant.EditDistance,
                 )
-                fitness_event = fitness_alignment(log, model_event)
-                precision_event = precision_alignment_tree(log, model_event)
-                conformance_event = conformance(model_event, sampled_rules, alphabet)
+            )
+            fitness_edit = fitness_alignment(log, model_edit)
+            precision_edit = precision_alignment_tree(log, model_edit)
+            conformance_edit = conformance(
+                model_edit,
+                sampled_rules,
+                alphabet,
+            )
+            pm4py.write_ptml(
+                model_edit,
+                f"./experiments/repair_mechanism/models/" f"{current_idx}_ed.ptml",
+            )
 
-                print(f"Trial {i}: edit-distance model")
-                model_edit = normalize_tree(
-                    apply_IM_with_rules(
-                        log, rules=sampled_rules, repair_mode=RepairVariant.EditDistance
-                    )
-                )
-                fitness_edit = fitness_alignment(log, model_edit)
-                precision_edit = precision_alignment_tree(log, model_edit)
-                conformance_edit = conformance(model_edit, sampled_rules, alphabet)
+        return {
+            "trial": current_idx,
+            "num_events": len(log),
+            "num_cases": log["case:concept:name"].nunique(),
+            "num_rules": len(sampled_rules),
+            "Prepruned_Fitness": fitness_prepruned,
+            "Prepruned_Precision": precision_prepruned,
+            "Prepruned_Conformance": conformance_prepruned[0],
+            "RIM_Fitness_TraceLevel": fitness_trace,
+            "RIM_Precision_TraceLevel": precision_trace,
+            "RIM_Conformance_TraceLevel": conformance_trace[0],
+            "RIM_Fitness_EventLevel": fitness_event,
+            "RIM_Precision_EventLevel": precision_event,
+            "RIM_Conformance_EventLevel": conformance_event[0],
+            "RIM_Fitness_EditDistance": fitness_edit,
+            "RIM_Precision_EditDistance": precision_edit,
+            "RIM_Conformance_EditDistance": conformance_edit[0],
+        }
 
-        except TimeoutException:
-            print(f"Trial {i} timed out, skipping")
-            continue
-        except Exception as e:
-            print(f"Trial {i} failed: {e}")
-            continue
-
-        rows.append(
-            {
-                "trial": i,
-                "num_events": len(log),
-                "num_cases": log["case:concept:name"].nunique(),
-                "num_rules": len(sampled_rules),
-                "Prepruned_Fitness": fitness_prepruned,
-                "Prepruned_Precision": precision_prepruned,
-                "Prepruned_Conformance": conformance_prepruned[0],
-                "RIM_Fitness_TraceLevel": fitness_trace,
-                "RIM_Precision_TraceLevel": precision_trace,
-                "RIM_Conformance_TraceLevel": conformance_trace[0],
-                "RIM_Fitness_EventLevel": fitness_event,
-                "RIM_Precision_EventLevel": precision_event,
-                "RIM_Conformance_EventLevel": conformance_event[0],
-                "RIM_Fitness_EditDistance": fitness_edit,
-                "RIM_Precision_EditDistance": precision_edit,
-                "RIM_Conformance_EditDistance": conformance_edit[0],
-            }
+    except TimeoutException:
+        print(f"Trial {current_idx} timed out", flush=True)
+        return None
+    except Exception as exc:
+        print(
+            f"Trial {current_idx} failed: {exc}\n" f"{traceback.format_exc()}",
+            flush=True,
         )
+        return None
 
-        pd.DataFrame(rows).to_csv(
-            "./experiments/repair_mechanism/results.csv",
-            index=False,
-        )
+
+def evaluate(
+    start_idx: int = 0,
+    num_trials: int = 3000,
+    max_workers: int = 16,
+):
+    base_dir = "./experiments/repair_mechanism"
+    os.makedirs(f"{base_dir}/logs", exist_ok=True)
+    os.makedirs(f"{base_dir}/models", exist_ok=True)
+
+    output_path = f"{base_dir}/results_{start_idx}.csv"
+    trial_indices = range(start_idx, start_idx + num_trials)
+    rows = []
+
+    context = mp.get_context("forkserver")
+
+    with context.Pool(
+        processes=max_workers,
+        maxtasksperchild=5,
+    ) as pool:
+        for row in pool.imap_unordered(
+            evaluate_trial,
+            trial_indices,
+            chunksize=1,
+        ):
+            if row is None:
+                continue
+
+            rows.append(row)
+            rows.sort(key=lambda result: result["trial"])
+
+            # Only the parent writes
+            pd.DataFrame(rows).to_csv(output_path, index=False)
 
     results = pd.DataFrame(rows)
-    results.to_csv("./experiments/repair_mechanism/results.csv", index=False)
+
+    if not results.empty:
+        results = results.sort_values("trial").reset_index(drop=True)
+
+    results.to_csv(output_path, index=False)
+    return results
 
 
 if __name__ == "__main__":
-    evaluate()
+    evaluate(
+        start_idx=0,
+    )
