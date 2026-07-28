@@ -1,9 +1,11 @@
 import multiprocessing as mp
 import os
 import random
+import re
 import signal
 import traceback
 from contextlib import contextmanager
+from typing import List
 
 import pandas as pd
 import pm4py
@@ -11,8 +13,10 @@ from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import (
     apply_IM,
     apply_IM_with_rules,
+    preprocess_and_apply_IM_with_rules,
     preprocess_log as simplify_log,
 )
+from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
 from metrics.precision import precision_alignment_tree
 from metrics.rule_conformance import conformance
@@ -258,7 +262,252 @@ def evaluate(
     return results
 
 
-if __name__ == "__main__":
-    evaluate(
-        start_idx=0,
+def evaluate_dataset(ids: List[str]):
+    base_dir = "./experiments/repair_mechanism"
+    models_dir = f"{base_dir}/models"
+    rows = []
+
+    os.makedirs(models_dir, exist_ok=True)
+
+    for eval_id in ids:
+        print(f"Starting trial {eval_id}", flush=True)
+
+        try:
+            log = pm4py.read_xes(f"{base_dir}/logs/log_{eval_id}.xes")
+            log = log_converter.apply(
+                log,
+                variant=log_converter.Variants.TO_DATA_FRAME,
+            )
+            preprocessed_log = simplify_log(log)
+
+            log["time:timestamp"] = pd.to_datetime(log["time:timestamp"])
+            alphabet = set(log["concept:name"].unique())
+
+            with open(
+                f"{base_dir}/rules_sampled_{eval_id}.txt",
+                "r",
+                encoding="utf-8",
+            ) as file:
+                code = file.read()
+
+            lines = []
+
+            for line_number, line in enumerate(
+                code.splitlines(),
+                start=1,
+            ):
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                lines.append(f"r{line_number} = {line}")
+
+            code = "\n".join(lines)
+            code = re.sub(r"\(\s*", "('", code)
+            code = re.sub(r"\s*,\s*", "', '", code)
+            code = re.sub(r"\s*\)", "')", code)
+            code = f"```python\n{code}\n```"
+
+            print(
+                f"Code for trial {eval_id}: {code}",
+                flush=True,
+            )
+
+            _, sampled_rules = code_extraction(
+                code,
+                activities=list(alphabet),
+            )
+
+            if not sampled_rules:
+                print(
+                    f"Trial {eval_id}: no rules extracted, skipping",
+                    flush=True,
+                )
+                continue
+
+            log_org = preprocessed_log.copy()
+
+            for rule in sampled_rules:
+                log_org = rule.repair(log_org)
+
+            if len(log_org) == 0:
+                print(
+                    f"Trial {eval_id}: all traces were removed, skipping",
+                    flush=True,
+                )
+                continue
+
+            with time_limit(420):
+                print(
+                    f"Trial {eval_id}: discovering prepruned model",
+                    flush=True,
+                )
+                model_prepruned = normalize_tree(apply_IM(log_org))
+                fitness_prepruned = fitness_alignment(
+                    log,
+                    model_prepruned,
+                )
+                precision_prepruned = precision_alignment_tree(
+                    log,
+                    model_prepruned,
+                )
+                conformance_prepruned = conformance(
+                    model_prepruned,
+                    sampled_rules,
+                    alphabet,
+                )
+
+                pm4py.write_ptml(
+                    model_prepruned,
+                    f"{models_dir}/{eval_id}_p.ptml",
+                )
+
+                print(
+                    f"Trial {eval_id}: trace-level model",
+                    flush=True,
+                )
+                model_trace = normalize_tree(
+                    preprocess_and_apply_IM_with_rules(
+                        log,
+                        rules=sampled_rules,
+                        repair_mode=RepairVariant.TraceLevel,
+                    )
+                )
+                fitness_trace = fitness_alignment(
+                    log,
+                    model_trace,
+                )
+                precision_trace = precision_alignment_tree(
+                    log,
+                    model_trace,
+                )
+                conformance_trace = conformance(
+                    model_trace,
+                    sampled_rules,
+                    alphabet,
+                )
+
+                pm4py.write_ptml(
+                    model_trace,
+                    f"{models_dir}/{eval_id}_t.ptml",
+                )
+
+                print(
+                    f"Trial {eval_id}: event-level model",
+                    flush=True,
+                )
+                model_event = normalize_tree(
+                    preprocess_and_apply_IM_with_rules(
+                        log,
+                        rules=sampled_rules,
+                        repair_mode=RepairVariant.EventLevel,
+                    )
+                )
+                fitness_event = fitness_alignment(
+                    log,
+                    model_event,
+                )
+                precision_event = precision_alignment_tree(
+                    log,
+                    model_event,
+                )
+                conformance_event = conformance(
+                    model_event,
+                    sampled_rules,
+                    alphabet,
+                )
+
+                pm4py.write_ptml(
+                    model_event,
+                    f"{models_dir}/{eval_id}_e.ptml",
+                )
+
+                print(
+                    f"Trial {eval_id}: edit-distance model",
+                    flush=True,
+                )
+                model_edit = normalize_tree(
+                    preprocess_and_apply_IM_with_rules(
+                        log,
+                        rules=sampled_rules,
+                        repair_mode=RepairVariant.EditDistance,
+                    )
+                )
+                fitness_edit = fitness_alignment(
+                    log,
+                    model_edit,
+                )
+                precision_edit = precision_alignment_tree(
+                    log,
+                    model_edit,
+                )
+                conformance_edit = conformance(
+                    model_edit,
+                    sampled_rules,
+                    alphabet,
+                )
+
+                pm4py.write_ptml(
+                    model_edit,
+                    f"{models_dir}/{eval_id}_ed.ptml",
+                )
+
+        except TimeoutException:
+            print(
+                f"Trial {eval_id} timed out, skipping",
+                flush=True,
+            )
+            continue
+
+        except Exception as exc:
+            print(
+                f"Trial {eval_id} failed: {exc}\n" f"{traceback.format_exc()}",
+                flush=True,
+            )
+            continue
+
+        rows.append(
+            {
+                "trial": eval_id,
+                "num_events": len(log),
+                "num_cases": log["case:concept:name"].nunique(),
+                "num_rules": len(sampled_rules),
+                "Prepruned_Fitness": fitness_prepruned,
+                "Prepruned_Precision": precision_prepruned,
+                "Prepruned_Conformance": conformance_prepruned[0],
+                "RIM_Fitness_TraceLevel": fitness_trace,
+                "RIM_Precision_TraceLevel": precision_trace,
+                "RIM_Conformance_TraceLevel": conformance_trace[0],
+                "RIM_Fitness_EventLevel": fitness_event,
+                "RIM_Precision_EventLevel": precision_event,
+                "RIM_Conformance_EventLevel": conformance_event[0],
+                "RIM_Fitness_EditDistance": fitness_edit,
+                "RIM_Precision_EditDistance": precision_edit,
+                "RIM_Conformance_EditDistance": conformance_edit[0],
+            }
+        )
+
+        pd.DataFrame(rows).to_csv(
+            f"{base_dir}/results.csv",
+            index=False,
+        )
+
+    results = pd.DataFrame(rows)
+
+    if not results.empty:
+        results = results.sort_values("trial").reset_index(drop=True)
+
+    results.to_csv(
+        f"{base_dir}/results.csv",
+        index=False,
     )
+
+    return results
+
+
+if __name__ == "__main__":
+    base_dir = "./experiments/repair_mechanism"
+    original_dataset = pd.read_csv(f"base_dir/results_0.csv")
+    ids = original_dataset["trial"][:300]
+    evaluate_dataset(ids)

@@ -17,9 +17,19 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
+    ExistenceRule,
+    InitializationRule,
     NotCoExistenceRule,
+    PrecedenceRule,
+    ResponseRule,
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
+
+
+@dataclass(frozen=True)
+class RuleBasedPO:
+    groups: List[Set[str]]
+    edges: Set[Tuple[int, int]]
 
 
 def abstract_dfg(
@@ -100,12 +110,6 @@ def abstract_dfg(
             )
 
     return new_dfg
-
-
-@dataclass(frozen=True)
-class RuleBasedPO:
-    groups: List[Set[str]]
-    edges: Set[Tuple[int, int]]
 
 
 def get_chain_components(
@@ -262,7 +266,6 @@ def merge_groups_connected_by_not_coexistence(
     NotCoExistence relation is then handled by recursive mining.
     """
     groups = [set(group) for group in groups]
-    print(f"Initial groups are: {groups}")
     rules = rules or []
 
     changed = True
@@ -345,10 +348,11 @@ def handle_chain_components(
     g = nx.DiGraph()
     g.add_nodes_from(range(len(po.groups)))
     g.add_edges_from(po.edges)
+    if len(g.nodes) == 1:
+        return po
 
     if not nx.is_directed_acyclic_graph(g):
         return None
-
     closure = nx.transitive_closure_dag(g)
     abstracted_dfg = abstract_dfg(dfg, po.groups)
 
@@ -392,8 +396,10 @@ def handle_chain_components(
     condensed_graph = nx.DiGraph()
     condensed_graph.add_nodes_from(range(len(merged_groups)))
     condensed_graph.add_edges_from(merged_edges)
+
     if len(merged_groups) <= 1:
         # Nothing can be done
+
         return None
     try:
         reduced_graph = nx.transitive_reduction(condensed_graph)
@@ -405,6 +411,20 @@ def handle_chain_components(
 
     except nx.NetworkXAlgorithmError:
         return None
+
+
+def detect_label_splitting(
+    alphabet: Set[str],
+    boundary_nodes: Set[str],
+) -> Optional[RuleBasedPO]:
+    if len(boundary_nodes) != 1:
+        return None
+
+    label_splitting = set(boundary_nodes)
+    remaining_acts = alphabet - label_splitting
+    return RuleBasedPO(
+        [label_splitting, remaining_acts, label_splitting], edges={(0, 1), (1, 2)}
+    )
 
 
 def detect_rule_based_po(
@@ -440,7 +460,7 @@ def detect_rule_based_po(
     }
 
     if start_nodes & end_nodes:
-        return None
+        return detect_label_splitting(alphabet, start_nodes & end_nodes)
     # We require a PO to have at most one start and one end node. Otherwise, it is unsatisfiable because Init(A) and Init(B) cannot hold together.
     if len(start_nodes) > 1 or len(end_nodes) > 1:
         return None
@@ -483,7 +503,6 @@ def detect_rule_based_po(
 
     if start_components & end_components:
         return None
-
     # Initialization/End as weak global ordering constraints.
     #
     # If Initialization(A), then A's block should be before all other blocks
@@ -574,6 +593,83 @@ def split_group_by_rules(
     ]
 
 
+def try_label_splitting(
+    group: Set[str],
+    rules: List[AbstractRule],
+) -> Optional[List[Set[str]]]:
+    graph = nx.DiGraph()
+    graph.add_nodes_from(group)
+    boundary_candidates = []
+    for rule in rules or []:
+        if isinstance(rule, InitializationRule):
+            boundary_candidates.append(rule.target_activity)
+
+        elif isinstance(
+            rule,
+            (
+                ResponseRule,
+                ChainResponseRule,
+                PrecedenceRule,
+                ChainPrecedenceRule,
+            ),
+        ):
+            a = rule.activity_a
+            b = rule.activity_b
+
+            if a in group and b in group and a != b:
+                graph.add_edge(a, b)
+    if len(graph.edges) == 0:
+        return None
+    for scc in nx.strongly_connected_components(graph):
+        if len(scc) <= 1:
+            continue
+        boundary = scc.pop()
+        if len(boundary_candidates) != 0:
+            boundary = boundary_candidates[0]
+
+        middle = set(group) - {boundary}
+
+        if not middle:
+            continue
+
+        candidate = [
+            {boundary},
+            middle,
+            {boundary},
+        ]
+
+        return candidate
+    return None
+
+
+def __check_applicability_of_label_splitting(branch_rules: List[AbstractRule]) -> bool:
+    if not any(
+        isinstance(r, PrecedenceRule) or isinstance(r, ChainPrecedenceRule)
+        for r in branch_rules
+    ) and not any(
+        isinstance(r, ResponseRule) or isinstance(r, ChainResponseRule)
+        for r in branch_rules
+    ):
+        return False
+    relevant_rule_types = (
+        PrecedenceRule,
+        ChainPrecedenceRule,
+        ChainResponseRule,
+        ResponseRule,
+    )
+    relevant_rules = [r for r in branch_rules if isinstance(r, relevant_rule_types)]
+    if not relevant_rules:
+        return False
+    dependencies = []
+    for r in relevant_rules:
+        a, b = r.activity_a, r.activity_b
+        # b depends on a
+        if (b, a) in dependencies:
+            return True
+        dependencies.append((a, b))
+    return False
+
+
 def po_to_parallel_sequence_branches(
     po: RuleBasedPO,
     rules: List[AbstractRule],
@@ -588,29 +684,35 @@ def po_to_parallel_sequence_branches(
     branches: List[List[Set[str]]] = []
 
     for weak_nodes in nx.connected_components(graph.to_undirected()):
+
         weak_nodes = set(weak_nodes)
         local_layers = topological_layers_for_nodes(graph, weak_nodes)
 
         if local_layers is None:
+
             return None
 
         branch = []
 
         for layer in local_layers:
             layer_group = set().union(*(po.groups[i] for i in layer))
-            print(f"Layer group is: {layer_group}")
 
             split_layers = split_group_by_rules(
                 layer_group,
                 rules,
             )
-            print(f"Layers are: {split_layers}")
             branch.extend(split_layers)
 
         branch_alphabet = set().union(*branch)
         branch_rules = supported_rules_alphabet(branch_alphabet, rules)
         branch = merge_groups_connected_by_not_coexistence(branch, branch_rules)
         branch = merge_groups_connected_by_chain_rules(branch, branch_rules)
+        # ---- LABEL SPLITTING HERE ----
+        if len(branch) == 1:
+            split = try_label_splitting(branch[0], branch_rules)
+            if split is not None:
+                branch = split
+        # ------------------------------
         if branch:
             branches.append(branch)
 
@@ -642,7 +744,6 @@ def mine_sequence_branch(
     branch_rules = supported_rules_alphabet(branch_alphabet, branch_rules)
 
     violations = SequenceCut.check_rules(branch_rules, groups)
-
     if violations:
         return None
 
@@ -700,20 +801,18 @@ def apply(
         return None
 
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
-
     po = detect_rule_based_po(rules, alphabet, dfg)
-
     if po is None:
         return None
 
     branches = po_to_parallel_sequence_branches(po, rules)
-    branch_alphabets = [set().union(*branch) for branch in branches] if branches else []
     if branches is None:
         return None
+
+    branch_alphabets = [set().union(*branch) for branch in branches] if branches else []
     branch_trees = []
     projected_branch_rules = ConcurrentCut.project_rules(rules, branch_alphabets)
-    for idx in range(len(branches)):
-        branch_groups = branches[idx]
+    for idx, branch_groups in enumerate(branches):
         branch_rules = projected_branch_rules[idx] if projected_branch_rules else []
         branch_tree = mine_sequence_branch(
             im_function=im_function,
@@ -724,7 +823,6 @@ def apply(
             repair_mode=repair_mode,
             noise_threshold=noise_threshold,
         )
-
         if branch_tree is None:
             return None
 
@@ -732,8 +830,7 @@ def apply(
 
     if not branch_trees:
         return None
-    if len(branch_trees) == 1 and len(po.groups) == 1:
-        return None
+
     if len(branch_trees) == 1:
         return branch_trees[0]
 
@@ -750,18 +847,24 @@ if __name__ == "__main__":
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
     rules = [
-        ChainResponseRule("c", "n"),
-        NotCoExistenceRule("j", "n"),
+        ResponseRule("b", "o"),
+        PrecedenceRule("o", "b"),
+        ExistenceRule("b"),
+        InitializationRule("b"),
     ]
 
     # Concrete minimized version of the data
     # many traces are ["m", "r"], with one trace ["r", "m", "r"].
-    log = (
-        [["c", "n", "x"] for _ in range(30)]
-        + [["c", "n", "x"] for _ in range(30)]
-        + [["j", "x"] for _ in range(30)]
-    )
-    alphabet = {"c", "n", "j", "x"}
+    log = [
+        ["b", "b", "b"],
+        ["b", "o", "b", "o"],
+        [
+            "b",
+            "b",
+            "b",
+        ],
+    ]
+    alphabet = {"b", "o"}
 
     dfg = DirectlyFollowsGraph(log).graph
 

@@ -90,7 +90,7 @@ def query_llm_for_declare_rules(
 
     args = llm_connection.args if llm_connection.args is not None else {}
     try:
-        _, rules, _ = generate_result_with_error_handling(
+        code, rules, convo = generate_result_with_error_handling(
             msg_history,
             extraction_function=partial_code_extraction,
             llm_name=llm_connection.llm_name,
@@ -101,7 +101,8 @@ def query_llm_for_declare_rules(
             standard_error_message=ERROR_MESSAGE_CODE_GENERATION_DECLARE,
             llm_args=args,
         )
-        return rules
+        errors = sum(msg.get("type") == "error" for msg in convo)
+        return rules, errors, code
     except ValueError as e:
         raise ValueError(f"Error during LLM query: {str(e)}")
     except ValueError as e:
@@ -129,6 +130,7 @@ def code_extraction(code_snippet: str, activities=None):
         "End": EndRule,
         "Existence": ExistenceRule,
         "Init": InitializationRule,
+        "Initialization": InitializationRule,
         "Precedence": PrecedenceRule,
         "RespondedExistence": RespondedExistenceRule,
         "Response": ResponseRule,
@@ -172,6 +174,7 @@ def process_code(code, activities=None):
                 "End",
                 "Existence",
                 "Init",
+                "Initialization",
                 "Precedence",
                 "RespondedExistence",
                 "Response",
@@ -210,8 +213,13 @@ def process_code(code, activities=None):
 
 
 if __name__ == "__main__":
-    code = """
+    import textwrap
+
+    code = textwrap.dedent("""
     ```python
     r1 = ChainResponse('A', 'B')
-    ```"""
-    code_extraction(code, ["A", "B"])
+    r2 = Initialization('A')
+    ```""")
+    _, rules = code_extraction(code, ["A", "B"])
+    for r in rules:
+        print(r)

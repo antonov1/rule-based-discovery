@@ -311,7 +311,7 @@ def rule_discovery():
             elif strategy == "From Text":
                 rules_to_consider = []
                 try:
-                    rules = query_llm_for_declare_rules(
+                    rules, _, _ = query_llm_for_declare_rules(
                         st.session_state["text_rule_description"],
                         activities=sorted(
                             set(

@@ -27,8 +27,9 @@ from inductive_miner.im_utils import (
     repair_mechanism,
 )
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules.rule_utils import product_automaton
+from rules.rule_utils import preprocess_rule_set, product_automaton
 from rules import *
+
 from inductive_miner.im_utils import normalize_tree, RepairVariant
 from metrics.fitness import fitness_token_based_tree
 from metrics.precision import precision_token_based_tree
@@ -309,6 +310,22 @@ def __check_satisfiability(alphabet: Set[str], rules: List[AbstractRule]):
     return len(product.final_states) > 0
 
 
+def preprocess_and_apply_IM_with_rules(
+    log: Union[pd.DataFrame, List],
+    rules: List[AbstractRule] = [],
+    activity_key="concept:name",
+    case_key="case:concept:name",
+    repair_mode=RepairVariant.EventLevel,
+    noise_threshold: float = 0,
+):
+    if isinstance(log, pd.DataFrame):
+        log = preprocess_log(log)
+    rules, log = preprocess_rule_set(rules, log)
+    return apply_IM_with_rules(
+        log=log, rules=rules, repair_mode=repair_mode, noise_threshold=noise_threshold
+    )
+
+
 def apply_IM_with_rules(
     log: Union[pd.DataFrame, List],
     rules: List[AbstractRule] = [],
@@ -491,7 +508,9 @@ def apply_IM_with_rules(
 
             res.parent = process_tree.parent
             return res
-    # print(f"We have reached the final fall-through: {log}, rules are: {rules}")
+    print(f"We have reached the final fall-through: {log[:10]}, rules are: {rules}")
+    input("kur za cska")
+
     return ProcessTree()
 
 
@@ -678,92 +697,26 @@ def apply_binary_IM(
 
 
 if __name__ == "__main__":
-    """
-
-        example_log = [["B", "A", "B", "A", "B"], ["B"]]
-        org = apply_IM(example_log)
-        print(f"ORG: {org}")
-
-        rules = [ExistenceRule("A")]
-        print(apply_IM_with_rules(example_log, rules=rules))
-
-        bpic = pm4py.read_xes("./inductive_miner/BPIC2017.xes")
-        bpic_log = pm4py.convert_to_dataframe(bpic)
-        # rules = [ExistenceRule("O_CANCELLED"]), ExistenceRule("A_APPROVED"])]
-
-        rules = [
-            ResponseRule("A_DECLINED", "W_Completeren aanvraag"),
-            PrecedenceRule("A_ACCEPTED", "A_DECLINED"),
-            ExistenceRule("A_DECLINED"),
-        ]
-
-        rules = [
-            ExistenceRule("A_Denied"),
-            ResponseRule("A_Denied", "W_Complete application"),
-        ]
-        # rules = [ExistenceRule("A_FINALIZED"])]
-
-        rules = [
-            AtMostOnceRule("O_Create Offer"),
-            PrecedenceRule("O_Accepted", "A_Pending"),
-        ]
-
-        # rules = [NotSuccessionRule("O_Create Offer", "W_Call after offers"])]
-        model = normalize_tree(apply_BIM_with_rules(bpic_log, rules))
-        net, im, fm = pm4py.convert_to_petri_net(model)
-        net, im, fm = pm4py.reduce_petri_net_implicit_places(net, im, fm)
-        print(f"(BIM) Model is: {model}")
-        model = normalize_tree(apply_IM_with_rules(bpic_log, rules))
-        print(f"Model is: {model}")
-        print(rule_conformance_apply(model, rules))
-
-
-        # gviz = pm4py.visualization.petri_net.visualizer.apply(net, im, fm)
-        # pm4py.visualization.petri_net.visualizer.view(gviz)
-
-        fitness = pm4py.fitness_token_based_replay(bpic_log, net, im, fm)
-        print(f"Fitness: {fitness}")
-        prec = pm4py.precision_token_based_replay(bpic_log, net, im, fm)
-        print(f"Prec: {prec}")
-
-        rules = [
-            PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
-            CoExistenceRule("ER Sepsis Triage", "CRP"),
-            ExistenceRule("ER Sepsis Triage"),
-            CoExistenceRule("ER Sepsis Triage", "LacticAcid")
-        ]
-
-        Response(ER Sepsis Triage, LacticAcid)
-    Response(ER Sepsis Triage, IV Antibiotics)
-    Initialization(ER Registration)
-    NotCoExistence(Admission NC, Release A)
-    """
     rules = [
-        PrecedenceRule("p", "j"),
-        NotCoExistenceRule("j", "n"),
-        EndRule("a"),
-        PrecedenceRule("d", "h"),
-        AtMostOnceRule("e"),
-        NotSuccessionRule("o", "d"),
-        ChainResponseRule("c", "n"),
-        ExistenceRule("f"),
+        RespondedExistenceRule("m", "q"),
+        ResponseRule("p", "b"),
+        ExistenceRule("l"),
+        ExistenceRule("i"),
+        ChainPrecedenceRule("k", "m"),
+        NotCoExistenceRule("b", "l"),
+        AtMostOnceRule("i"),
     ]
-    # rules = [
-    #    ChainResponseRule("ER Registration", "ER Triage"),
-    #    InitializationRule("ER Registration"),
-    #    AtMostOnceRule("ER Registration"),
-    #    ChainPrecedenceRule("ER Triage", "ER Sepsis Triage"),
-    # ]
-
-    log = pm4py.read_xes("./inductive_miner/log_4.xes", variant="iterparse")
-    # make sure that the encoding is right, time:timestamp is in datetime format and case:concept:name and concept:name are strings
+    log = pm4py.read_xes("./inductive_miner/log_277.xes", variant="iterparse")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
     log = pm4py.convert_to_dataframe(log)
 
-    # log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     log_org = log.copy()
+    log = preprocess_log(log)
+
+    rules, log = preprocess_rule_set(rules, log)
+    print(f"Rules are: {rules}")
 
     model = apply_IM_with_rules(
         log, rules=rules, repair_mode=RepairVariant.EventLevel, noise_threshold=0

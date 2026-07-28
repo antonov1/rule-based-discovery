@@ -1,9 +1,9 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
 from functools import reduce
 from itertools import combinations
-from typing import Dict, List, Set, TypeAlias
+from typing import Dict, List, Set, Tuple, TypeAlias
 
 from automata.fa.dfa import DFA
 from automata.fa.nfa import NFA
@@ -11,6 +11,7 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
+    CoExistenceRule,
     EndRule,
     ExistenceRule,
     InitializationRule,
@@ -286,3 +287,203 @@ def reduce_rule_hierarchies(
             redundant_keys.add((NotSuccessionRule, (b, a)))
 
     return [rule for rule in rules if rule_key(rule) not in redundant_keys]
+
+
+def _find_cycle_nodes(edges: List[Tuple[str, str]]) -> Set[str]:
+    """
+    Returns every activity that belongs to a directed cycle
+    """
+    graph: dict[str, list[str]] = defaultdict(list)
+    nodes: set[str] = set()
+
+    for source, target in edges:
+        graph[source].append(target)
+        nodes.update((source, target))
+
+    index = 0
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    indices: dict[str, int] = {}
+    lowlinks: dict[str, int] = {}
+    cycle_nodes: set[str] = set()
+
+    def strong_connect(node: str) -> None:
+        nonlocal index
+
+        indices[node] = index
+        lowlinks[node] = index
+        index += 1
+
+        stack.append(node)
+        on_stack.add(node)
+
+        for neighbour in graph[node]:
+            if neighbour not in indices:
+                strong_connect(neighbour)
+                lowlinks[node] = min(
+                    lowlinks[node],
+                    lowlinks[neighbour],
+                )
+            elif neighbour in on_stack:
+                lowlinks[node] = min(
+                    lowlinks[node],
+                    indices[neighbour],
+                )
+
+        if lowlinks[node] != indices[node]:
+            return
+
+        component: set[str] = set()
+
+        while True:
+            member = stack.pop()
+            on_stack.remove(member)
+            component.add(member)
+
+            if member == node:
+                break
+
+        # More than one node in an SCC --> cycle detected
+        if len(component) > 1:
+            cycle_nodes.update(component)
+
+        elif node in graph[node]:
+            cycle_nodes.add(node)
+
+    for node in nodes:
+        if node not in indices:
+            strong_connect(node)
+
+    return cycle_nodes
+
+
+def __identify_circularities(rules: List[AbstractRule]) -> Set[Tuple[str]]:
+    response_rules = [
+        r for r in rules if isinstance(r, (ChainResponseRule, ResponseRule))
+    ]
+    precedence_rules = [
+        r for r in rules if isinstance(r, (ChainPrecedenceRule, PrecedenceRule))
+    ]
+    response_edges = [(rule.activity_a, rule.activity_b) for rule in response_rules]
+    precedence_edges = [(rule.activity_a, rule.activity_b) for rule in precedence_rules]
+    return _find_cycle_nodes(response_edges) | _find_cycle_nodes(precedence_edges)
+
+
+def resolve_circularities(
+    circularities: Set[str],
+    remaining_rules: List[AbstractRule],
+) -> List[AbstractRule]:
+    changed = True
+    rules_to_remove = []
+
+    while changed:
+        changed = False
+
+        for rule in remaining_rules:
+            previous_size = len(circularities)
+
+            if hasattr(rule, "target_activity"):
+                continue
+
+            if (
+                isinstance(
+                    rule, (ChainResponseRule, ResponseRule, RespondedExistenceRule)
+                )
+                and rule.activity_b in circularities
+            ):
+                circularities.add(rule.activity_a)
+                rules_to_remove.append(rule)
+
+            elif (
+                isinstance(
+                    rule,
+                    (
+                        ChainPrecedenceRule,
+                        PrecedenceRule,
+                    ),
+                )
+                and rule.activity_a in circularities
+            ):
+                circularities.add(rule.activity_b)
+                rules_to_remove.append(rule)
+
+            elif isinstance(rule, CoExistenceRule) and (
+                rule.activity_a in circularities or rule.activity_b in circularities
+            ):
+                circularities.update((rule.activity_a, rule.activity_b))
+                rules_to_remove.append(rule)
+            elif isinstance(rule, (NotCoExistenceRule, NotSuccessionRule)) and (
+                rule.activity_a in circularities or rule.activity_b in circularities
+            ):
+                # This is trivially satisfied so we can just minimize the rule set without caring
+                rules_to_remove.append(rule)
+            if len(circularities) > previous_size:
+                changed = True
+    return [rule for rule in remaining_rules if rule not in rules_to_remove]
+
+
+def preprocess_rule_set(
+    rules: List[AbstractRule], log: List[str]
+) -> Tuple[List[AbstractRule], List[str]]:
+    """
+    Identifies parts of the rule set that are optional/should be removed
+    and modifies the list of rules and event log accordingly
+    """
+    alphabet = {e for trace in log for e in trace}
+    automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
+    product = product_automaton(rules, alphabet, automata_by_rule)
+    if not len(product.final_states):
+        raise Exception(
+            f"Product automaton is empty, the set of rules is unsatisfiable."
+        )
+
+    rules_to_remove = []
+    rules_to_add = []
+    # First, merge patterns from type NotSuccession(a,b) \land NotSuccession(b,a) into NotCoExistence(a,b)
+    not_succession_rules = [r for r in rules if isinstance(r, NotSuccessionRule)]
+    for i in range(len(not_succession_rules) - 1):
+        for j in range(i + 1, len(not_succession_rules)):
+            rule_i = not_succession_rules[i]
+            rule_j = not_succession_rules[j]
+            a_i, b_i = rule_i.activity_a, rule_i.activity_b
+            a_j, b_j = rule_j.activity_a, rule_j.activity_b
+            if (a_i == b_j) and (a_j == b_i):
+                rules_to_remove.extend([rule_i, rule_j])
+                rules_to_add.append(NotCoExistenceRule(a_i, b_i))
+    remaining_rules = [r for r in rules if r not in rules_to_remove]
+    remaining_rules.extend(rules_to_add)
+    existence = {r.target_activity for r in rules if isinstance(r, ExistenceRule)}
+
+    conflicts = {
+        r.activity_b if r.activity_a in existence else r.activity_a
+        for r in remaining_rules
+        if isinstance(r, NotCoExistenceRule)
+        and (r.activity_a in existence or r.activity_b in existence)
+    }
+    rules_to_remove.extend(
+        [
+            r
+            for r in remaining_rules
+            if isinstance(r, NotCoExistenceRule)
+            and (r.activity_a in existence or r.activity_b in existence)
+        ]
+    )
+    remaining_rules = [r for r in remaining_rules if r not in rules_to_remove]
+    # Check for circularities, e.g., Response(a,b) \land Response(b,a) or Precedence(a,b) \land Precedence(b,a) (remove the rules, remove depending constraints, remove acts from the log)
+    circularities = __identify_circularities(remaining_rules)
+    conflicts = conflicts | circularities
+
+    if conflicts:
+        conflicts = conflicts | circularities
+
+        remaining_rules = resolve_circularities(conflicts, remaining_rules)
+    # Preprocess the log
+    print(f"The remaining rules are: {rules}, conflicts are: {conflicts}")
+    modified_log = []
+    for trace in log:
+        new_trace = [e for e in trace if e not in conflicts]
+        modified_log.append(new_trace)
+    log = modified_log
+    # In the end, get rid of redundant activities using the hierarchy
+    # And the automaton-based redundancy check
+    return minimize_rule_set(reduce_rule_hierarchies(remaining_rules), log), log
