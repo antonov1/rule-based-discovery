@@ -749,7 +749,6 @@ def mine_sequence_branch(
 
     projections = SequenceCut(dfg).relaxed_projection(log, groups)
     projected_rules = SequenceCut.project_rules(branch_rules, groups)
-
     if len(projections) != len(groups):
         return None
 

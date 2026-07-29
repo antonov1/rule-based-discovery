@@ -10,6 +10,8 @@ from rules import (
     EndRule,
     ExistenceRule,
     InitializationRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
     PrecedenceRule,
     RespondedExistenceRule,
     ResponseRule,
@@ -60,9 +62,21 @@ class BaseCut(ABC):
                         group_b_idx = i
                 if group_a_idx is None or group_b_idx is None:
                     if group_a_idx is not None:
-                        projected_rules[group_a_idx].append(rule)
+                        (
+                            projected_rules[group_a_idx].append(rule)
+                            if not isinstance(
+                                rule, (NotCoExistenceRule, NotSuccessionRule)
+                            )
+                            else None
+                        )
                     elif group_b_idx is not None:
-                        projected_rules[group_b_idx].append(rule)
+                        (
+                            projected_rules[group_b_idx].append(rule)
+                            if not isinstance(
+                                rule, (NotCoExistenceRule, NotSuccessionRule)
+                            )
+                            else None
+                        )
                 if group_a_idx is not None and group_b_idx is not None:
                     if group_a_idx != group_b_idx:
                         # We have just eliminated a rule

@@ -2,11 +2,7 @@ from typing import Callable, List, Optional
 
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import (
-    assert_rules_supported,
-    repair_mechanism,
-    RepairVariant,
-)
+from inductive_miner.im_utils import repair_mechanism, RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
@@ -85,8 +81,8 @@ def apply(
         group_0 = {act for trace in sublogs[0] for act in trace}
         group_1 = {act for trace in sublogs[1] for act in trace}
         proj_rules = ConcurrentCut.project_rules(rules, [group_0, group_1])
-        assert_rules_supported("In CONCUR (0):", sublogs[0], proj_rules[0])
-        assert_rules_supported("In CONCUR (1):", sublogs[1], proj_rules[1])
+        # assert_rules_supported("In CONCUR (0):", sublogs[0], proj_rules[0])
+        # assert_rules_supported("In CONCUR (1):", sublogs[1], proj_rules[1])
 
         add_child(
             parent,

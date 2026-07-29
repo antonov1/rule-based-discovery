@@ -26,7 +26,7 @@ class ConcurrentCut(BaseCut):
     def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
         unsat_rules = []
         for rule in rules:
-            if isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
+            if isinstance(rule, (InitializationRule, EndRule)):
                 if any(rule.target_activity in group for group in groups):
                     unsat_rules.append(rule)
             elif isinstance(rule, ChainPrecedenceRule) or isinstance(

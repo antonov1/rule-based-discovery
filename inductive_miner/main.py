@@ -39,7 +39,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def handle_empty_traces(
@@ -58,15 +58,12 @@ def handle_empty_traces(
             groups = [set(), act_set]
             unsat_rules = ExclusiveChoiceCut.check_rules(rules, groups)
             if unsat_rules:
-                return repair_mechanism(
-                    log,
-                    unsat_rules,
-                    im_function,
+                return im_function(
+                    non_empty_log,
                     rules,
-                    repair_mode,
                     noise_threshold=noise_threshold,
+                    repair_mode=repair_mode,
                 )
-
         if not non_empty_log:
             return ProcessTree()  # Pure Tau
 
@@ -509,8 +506,6 @@ def apply_IM_with_rules(
             res.parent = process_tree.parent
             return res
     print(f"We have reached the final fall-through: {log[:10]}, rules are: {rules}")
-    input("kur za cska")
-
     return ProcessTree()
 
 
@@ -698,15 +693,17 @@ def apply_binary_IM(
 
 if __name__ == "__main__":
     rules = [
-        RespondedExistenceRule("m", "q"),
-        ResponseRule("p", "b"),
-        ExistenceRule("l"),
-        ExistenceRule("i"),
-        ChainPrecedenceRule("k", "m"),
-        NotCoExistenceRule("b", "l"),
-        AtMostOnceRule("i"),
+        PrecedenceRule("n", "d"),
+        RespondedExistenceRule("m", "b"),
+        AtMostOnceRule("e"),
+        PrecedenceRule("l", "m"),
+        ExistenceRule("a"),
+        ResponseRule("n", "d"),
+        NotCoExistenceRule("f", "h"),
+        NotCoExistenceRule("h", "m"),
+        RespondedExistenceRule("o", "h"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_277.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_929.xes", variant="iterparse")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )

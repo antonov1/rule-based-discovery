@@ -68,12 +68,17 @@ class LoopCut(BaseCut):
                     rule.activity_b in group for group in group_rest
                 ):
                     unsat_rules.append(rule)
+            elif isinstance(rule, NotSuccessionRule):
+                a_present = any(rule.activity_a in group for group in groups)
+                b_present = any(rule.activity_b in group for group in groups)
+                if a_present and b_present:
+                    unsat_rules.append(rule)
+            elif isinstance(rule, NotCoExistenceRule):
+                if any(rule.activity_a in group for group in groups) and any(
+                    rule.activity_b in group for group in groups
+                ):
+                    unsat_rules.append(rule)
 
-            elif isinstance(rule, NotSuccessionRule) or isinstance(
-                rule, NotCoExistenceRule
-            ):
-                # regardless what you do, that's gonna be unsatisfied
-                unsat_rules.append(rule)
         return unsat_rules
 
     def discover(self) -> List[set]:

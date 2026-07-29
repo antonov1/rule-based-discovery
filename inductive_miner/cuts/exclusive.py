@@ -27,12 +27,8 @@ class ExclusiveChoiceCut(BaseCut):
     def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
         unsat_rules = []
         for rule in rules:
-            if isinstance(rule, ExistenceRule):
-                if any(rule.target_activity in group for group in groups):
-                    unsat_rules.append(rule)
-            elif isinstance(rule, InitializationRule) or isinstance(rule, EndRule):
-                if any(rule.target_activity in group for group in groups):
-                    unsat_rules.append(rule)
+            if isinstance(rule, (InitializationRule, ExistenceRule, EndRule)):
+                unsat_rules.append(rule)
             elif (
                 isinstance(rule, PrecedenceRule)
                 or isinstance(rule, ChainPrecedenceRule)

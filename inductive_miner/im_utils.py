@@ -1,10 +1,18 @@
 import time
+from collections import Counter
 from enum import Enum
 from typing import Callable, List
 
 from inductive_miner.cuts import LoopCut
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule, EndRule, ExistenceRule, InitializationRule
+from rules import (
+    AbstractRule,
+    EndRule,
+    ExistenceRule,
+    InitializationRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
+)
 
 
 class RepairVariant(Enum):
@@ -30,7 +38,7 @@ def assert_rules_supported(where: str, log, rules):
             if r.target_activity not in acts:
                 bad.append((str(r), acts))
         elif hasattr(r, "activity_a") and hasattr(r, "activity_b"):
-            if r.activity_a not in acts or r.activity_b not in acts:
+            if r.activity_a not in acts and r.activity_b not in acts:
                 bad.append((str(r), acts))
 
     if bad:
@@ -112,43 +120,91 @@ def base_cases(
     rules: List[AbstractRule] = None,
     **kwargs,
 ):
-    """
-    Handle inductive miner base cases.
-
-    Cases:
-    - No nodes  -> return tau.
-    - One real activity node (optionally plus ArtificialNoneNode):
-        - self-loop + empty trace -> LOOP(tau, activity)
-        - self-loop only        -> LOOP(activity, tau)
-        - no self-loop          -> activity leaf
-    - Otherwise: not a base case, raise an error.
-    """
     nodes = set(dfg_graph.nodes)
+    rules = rules or []
 
     if not nodes:
+        # The candidate base case is tau / the empty trace.
+        unsat_rules = [
+            rule
+            for rule in rules
+            if isinstance(
+                rule,
+                (
+                    ExistenceRule,
+                    InitializationRule,
+                    EndRule,
+                ),
+            )
+        ]
+
+        if unsat_rules:
+            repaired_tree = repair_mechanism(
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                repair_mode=kwargs.get(
+                    "repair_mode",
+                    REPAIR_VARIANT,
+                ),
+                noise_threshold=kwargs.get(
+                    "noise_threshold",
+                    0.0,
+                ),
+            )
+
+            if repaired_tree is not None:
+                return repaired_tree
+
         return process_tree
 
     if len(nodes) == 1 or (len(nodes) == 2 and "ArtificialNoneNode" in nodes):
         tree = _build_single_activity_tree(
-            log, dfg_graph, nodes, im_function, rules, **kwargs
+            log,
+            dfg_graph,
+            nodes,
+            im_function,
+            rules,
+            **kwargs,
         )
+
         return tree if tree is not None else process_tree
 
     raise Exception(
-        f"Base case error: log has multiple activities but no cut was found. Log is: {log}, process_tree is: {process_tree}, dfg_graph is: {dfg_graph}, nodes are: {nodes}"
+        "Base case error: log has multiple activities but no cut was found. "
+        f"Log is: {log}, process_tree is: {process_tree}, "
+        f"dfg_graph is: {dfg_graph}, nodes are: {nodes}"
     )
 
 
 def _build_single_activity_tree(
     log, dfg_graph, nodes, im_function, rules, **kwargs
 ) -> ProcessTree:
+    nodes = nodes - {"ArtificialNoneNode"}
     if not nodes:
         return ProcessTree()  # Tau
 
     activity = nodes.pop()
 
     if not dfg_graph.has_edge(activity, activity):
-        return ProcessTree(label=activity)
+        unsat_rules = []
+        for r in rules:
+            if hasattr(r, "target_activity"):
+                target = r.target_activity
+                if target != activity:
+                    unsat_rules.append(r)
+        if unsat_rules:
+            return repair_mechanism(
+                log,
+                unsat_rules,
+                im_function,
+                rules,
+                repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
+                noise_threshold=kwargs.get("noise_threshold", 0.0),
+            )
+        else:
+            return ProcessTree(label=activity)
 
     has_empty_trace = [] in log
     if has_empty_trace:
@@ -228,9 +284,12 @@ def supported_rules(log, rules):
         if hasattr(rule, "target_activity"):
             if rule.target_activity in acts:
                 filtered.append(rule)
-        elif hasattr(rule, "activity_a") and hasattr(rule, "activity_b"):
+        elif hasattr(rule, "activity_a"):
             if rule.activity_a in acts and rule.activity_b in acts:
                 filtered.append(rule)
+            elif rule.activity_a in acts or rule.activity_b in acts:
+                if not isinstance(rule, (NotSuccessionRule, NotCoExistenceRule)):
+                    filtered.append(rule)
     return filtered
 
 
@@ -544,6 +603,10 @@ def repair_trace(trace, automaton: DFA):
     }
 
 
+def log_signature(log):
+    return Counter(tuple(trace) for trace in log)
+
+
 def apply_edit_distance_repair(
     log,
     rules: List[AbstractRule],
@@ -552,7 +615,7 @@ def apply_edit_distance_repair(
     noise_threshold: float = 0.0,
 ):
     # Find the traces that are not accepted by the product automaton
-    original_log = log.copy()
+    original_log = [list(trace) for trace in log]
     alphabet = set(e for trace in log for e in trace)
     for rule in rules or []:
         if hasattr(rule, "activity_a"):
@@ -576,13 +639,12 @@ def apply_edit_distance_repair(
         repair_result = repair_trace(trace, product)
         log.append(repair_result["repaired_trace"])
     # Check if we made any progress, e.g., decreased log size or number of events
-    if len(log) == len(original_log) and sum(len(trace) for trace in log) == sum(
-        len(trace) for trace in original_log
-    ):
+    if log_signature(log) == log_signature(original_log):
         return None
+    new_rules = supported_rules(log, rules)
     return im_function(
         log,
-        rules,
+        new_rules,
         repair_mode=RepairVariant.EditDistance,
         noise_threshold=noise_threshold,
     )

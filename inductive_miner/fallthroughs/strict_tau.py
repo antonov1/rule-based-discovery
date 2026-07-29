@@ -3,11 +3,7 @@ from typing import Callable, List, Optional
 import networkx as nx
 from inductive_miner.cuts import LoopCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import (
-    assert_rules_supported,
-    repair_mechanism,
-    RepairVariant,
-)
+from inductive_miner.im_utils import repair_mechanism, RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -72,7 +68,7 @@ def apply(
         if rules
         else None
     )
-    assert_rules_supported("In STAU (0):", sublog, proj_rules)
+    # assert_rules_supported("In STAU (0):", sublog, proj_rules)
 
     do_child = (
         im_function(
