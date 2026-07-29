@@ -5,7 +5,7 @@ import re
 import signal
 import traceback
 from contextlib import contextmanager
-from typing import List
+from typing import List, Set
 
 import pandas as pd
 import pm4py
@@ -27,6 +27,7 @@ from pm4py.algo.simulation.tree_generator.algorithm import (
     apply as simulate_process_tree,
 )
 from pm4py.objects.conversion.log import converter as log_converter
+from pm4py.objects.process_tree.obj import ProcessTree
 from rule_extraction.from_data import extract
 
 
@@ -59,6 +60,24 @@ def time_limit(seconds):
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old_handler)
+
+
+def get_non_tau_leaves(node: ProcessTree | None) -> Set[str]:
+    """Return the labels of all non-tau leaves in a process tree."""
+    if node is None:
+        return set()
+
+    children = getattr(node, "children", None) or []
+
+    if not children:
+        return {node.label} if node.label is not None else set()
+
+    leaves: Set[str] = set()
+
+    for child in children:
+        leaves.update(get_non_tau_leaves(child))
+
+    return leaves
 
 
 def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
@@ -115,9 +134,11 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
         if len(log_org) == 0:
             print(f"Trial {current_idx}: all traces removed", flush=True)
             return None
+        original_activities = len({e for trace in log_org for e in trace})
 
         with time_limit(480):
             model_prepruned = normalize_tree(apply_IM(log_org))
+            prepruned_acts = len(get_non_tau_leaves(model_prepruned))
             fitness_prepruned = fitness_alignment(log, model_prepruned)
             precision_prepruned = precision_alignment_tree(
                 log,
@@ -140,6 +161,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                     repair_mode=RepairVariant.TraceLevel,
                 )
             )
+            trace_acts = len(get_non_tau_leaves(model_trace))
             fitness_trace = fitness_alignment(log, model_trace)
             precision_trace = precision_alignment_tree(log, model_trace)
             conformance_trace = conformance(
@@ -159,6 +181,8 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                     repair_mode=RepairVariant.EventLevel,
                 )
             )
+            event_acts = len(get_non_tau_leaves(model_event))
+
             fitness_event = fitness_alignment(log, model_event)
             precision_event = precision_alignment_tree(log, model_event)
             conformance_event = conformance(
@@ -178,6 +202,8 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                     repair_mode=RepairVariant.EditDistance,
                 )
             )
+
+            edit_acts = len(get_non_tau_leaves(model_edit))
             fitness_edit = fitness_alignment(log, model_edit)
             precision_edit = precision_alignment_tree(log, model_edit)
             conformance_edit = conformance(
@@ -195,15 +221,20 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             "num_events": len(log),
             "num_cases": log["case:concept:name"].nunique(),
             "num_rules": len(sampled_rules),
+            "num_acts": original_activities,
+            "Prepruned_acts": prepruned_acts,
             "Prepruned_Fitness": fitness_prepruned,
             "Prepruned_Precision": precision_prepruned,
             "Prepruned_Conformance": conformance_prepruned[0],
+            "RIM_Acts_TraceLevel": trace_acts,
             "RIM_Fitness_TraceLevel": fitness_trace,
             "RIM_Precision_TraceLevel": precision_trace,
             "RIM_Conformance_TraceLevel": conformance_trace[0],
+            "RIM_Acts_EventLevel": event_acts,
             "RIM_Fitness_EventLevel": fitness_event,
             "RIM_Precision_EventLevel": precision_event,
             "RIM_Conformance_EventLevel": conformance_event[0],
+            "RIM_Acts_EditDistance": edit_acts,
             "RIM_Fitness_EditDistance": fitness_edit,
             "RIM_Precision_EditDistance": precision_edit,
             "RIM_Conformance_EditDistance": conformance_edit[0],
@@ -337,6 +368,7 @@ def evaluate_dataset(ids: List[str]):
                     flush=True,
                 )
                 continue
+            perc_of_conf_traces = len(log_org) / len(preprocessed_log) * 100
 
             with time_limit(420):
                 print(
@@ -351,6 +383,12 @@ def evaluate_dataset(ids: List[str]):
                 precision_prepruned = precision_alignment_tree(
                     log,
                     model_prepruned,
+                )
+                f1_prepruned = (
+                    2
+                    * fitness_prepruned
+                    * precision_prepruned
+                    / (fitness_prepruned + precision_prepruned)
                 )
                 conformance_prepruned = conformance(
                     model_prepruned,
@@ -382,6 +420,12 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_trace,
                 )
+                f1_trace = (
+                    2
+                    * fitness_trace
+                    * precision_trace
+                    / (fitness_trace + precision_trace)
+                )
                 conformance_trace = conformance(
                     model_trace,
                     sampled_rules,
@@ -412,6 +456,12 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_event,
                 )
+                f1_event = (
+                    2
+                    * fitness_event
+                    * precision_event
+                    / (fitness_event + precision_event)
+                )
                 conformance_event = conformance(
                     model_event,
                     sampled_rules,
@@ -441,6 +491,9 @@ def evaluate_dataset(ids: List[str]):
                 precision_edit = precision_alignment_tree(
                     log,
                     model_edit,
+                )
+                f1_edit = (
+                    2 * fitness_edit * precision_edit / (fitness_edit + precision_edit)
                 )
                 conformance_edit = conformance(
                     model_edit,
@@ -473,17 +526,22 @@ def evaluate_dataset(ids: List[str]):
                 "num_events": len(log),
                 "num_cases": log["case:concept:name"].nunique(),
                 "num_rules": len(sampled_rules),
+                "conforming_traces_perc": perc_of_conf_traces,
                 "Prepruned_Fitness": fitness_prepruned,
                 "Prepruned_Precision": precision_prepruned,
+                "Prepruned_F1": f1_prepruned,
                 "Prepruned_Conformance": conformance_prepruned[0],
                 "RIM_Fitness_TraceLevel": fitness_trace,
                 "RIM_Precision_TraceLevel": precision_trace,
+                "RIM_F1_TraceLevel": f1_trace,
                 "RIM_Conformance_TraceLevel": conformance_trace[0],
                 "RIM_Fitness_EventLevel": fitness_event,
                 "RIM_Precision_EventLevel": precision_event,
+                "RIM_F1_EventLevel": f1_event,
                 "RIM_Conformance_EventLevel": conformance_event[0],
                 "RIM_Fitness_EditDistance": fitness_edit,
                 "RIM_Precision_EditDistance": precision_edit,
+                "RIM_F1_EditDistance": f1_edit,
                 "RIM_Conformance_EditDistance": conformance_edit[0],
             }
         )
@@ -509,5 +567,5 @@ def evaluate_dataset(ids: List[str]):
 if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
     original_dataset = pd.read_csv(f"base_dir/results_0.csv")
-    ids = original_dataset["trial"][:300]
+    ids = original_dataset["trial"][:200]
     evaluate_dataset(ids)

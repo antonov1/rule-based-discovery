@@ -47,7 +47,16 @@ def assert_rules_supported(where: str, log, rules):
         )
 
 
-def normalize_tree(node):
+def is_tau(node: ProcessTree) -> bool:
+    return (
+        node is not None
+        and node.operator is None
+        and node.label is None
+        and not getattr(node, "children", None)
+    )
+
+
+def normalize_tree(node: ProcessTree):
     if node is None:
         return None
 
@@ -60,21 +69,42 @@ def normalize_tree(node):
         Operator.PARALLEL,
     }
 
-    new_children = []
+    normalized_children = []
+
     for child in node.children:
         child = normalize_tree(child)
+
         if child is None:
+            continue
+
+        if node.operator == Operator.SEQUENCE and is_tau(child):
             continue
 
         if node.operator in associative_ops and child.operator == node.operator:
             for grandchild in child.children:
                 grandchild.parent = node
-                new_children.append(grandchild)
+                normalized_children.append(grandchild)
         else:
             child.parent = node
-            new_children.append(child)
+            normalized_children.append(child)
 
-    node.children = new_children
+    node.children = normalized_children
+
+    if node.operator in {Operator.XOR, Operator.LOOP}:
+        if not node.children or all(is_tau(child) for child in node.children):
+            tau = ProcessTree()
+            tau.parent = node.parent
+            return tau
+
+    if node.operator == Operator.SEQUENCE and not node.children:
+        tau = ProcessTree()
+        tau.parent = node.parent
+        return tau
+
+    if node.operator in associative_ops and len(node.children) == 1:
+        child = node.children[0]
+        child.parent = node.parent
+        return child
 
     return node
 
