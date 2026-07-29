@@ -481,9 +481,6 @@ if __name__ == "__main__":
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
         LLMConnection(os.getenv("OPENAI_API_KEY", "gpt-5.4", "OpenAI", {})),
         LLMConnection(
-            os.getenv("COHERE_API_KEY", "command-a-plus-05-2026", "Cohere"), {}
-        ),
-        LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "granite4.1:30b",
             AIProviders.AZURE,
@@ -497,7 +494,19 @@ if __name__ == "__main__":
         ),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
-            "qwen3.5:9b ",
+            "qwen3.5:9b",
+            AIProviders.AZURE,
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "llama4:latest",
+            AIProviders.AZURE,
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "mistral:7b",
             AIProviders.AZURE,
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
