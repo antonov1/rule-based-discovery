@@ -45,12 +45,19 @@ def rule_to_slots(rule: AbstractRule) -> tuple[Any, ...]:
     )
 
 
-def constraint_based_similarity(original_rules, generated_rules) -> float:
-    slots_org = [rule_to_slots(r) for r in original_rules]
-    slots_gen = [rule_to_slots(r) for r in generated_rules]
-    total_rules = len(set(slots_org + slots_gen))
-    shared_rules = len([r for r in total_rules if r in slots_org and r in slots_gen])
-    return shared_rules / total_rules
+def constraint_based_similarity(
+    original_rules: List[AbstractRule],
+    generated_rules: List[AbstractRule],
+) -> float:
+    slots_org = {rule_to_slots(rule) for rule in original_rules}
+    slots_gen = {rule_to_slots(rule) for rule in generated_rules}
+    all_rules = slots_org | slots_gen
+
+    if not all_rules:
+        return 1.0
+
+    shared_rules = slots_org & slots_gen
+    return len(shared_rules) / len(all_rules)
 
 
 def count_matching_slots(
