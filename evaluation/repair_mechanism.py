@@ -566,6 +566,6 @@ def evaluate_dataset(ids: List[str]):
 
 if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
-    original_dataset = pd.read_csv(f"base_dir/results_0.csv")
+    original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
     ids = original_dataset["trial"][:200]
     evaluate_dataset(ids)
