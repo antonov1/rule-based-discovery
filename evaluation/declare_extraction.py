@@ -8,7 +8,6 @@ import pandas as pd
 from automata.fa.dfa import DFA
 from dotenv import load_dotenv
 from llm_connection.query import code_extraction, query_llm_for_declare_rules
-from promoai.general_utils.ai_providers import AIProviders
 from promoai.general_utils.llm_connection import LLMConnection
 from rules.rule_utils import is_redundant, product_automaton
 from scipy.optimize import linear_sum_assignment
@@ -44,6 +43,14 @@ def rule_to_slots(rule: AbstractRule) -> tuple[Any, ...]:
         rule.activity_a,
         rule.activity_b,
     )
+
+
+def constraint_based_similarity(original_rules, generated_rules) -> float:
+    slots_org = [rule_to_slots(r) for r in original_rules]
+    slots_gen = [rule_to_slots(r) for r in generated_rules]
+    total_rules = len(set(slots_org + slots_gen))
+    shared_rules = len([r for r in total_rules if r in slots_org and r in slots_gen])
+    return shared_rules / total_rules
 
 
 def count_matching_slots(
@@ -255,6 +262,7 @@ def evaluate(
                 "original_rule_count": len(original_rules),
                 "generated_rule_count": pd.NA,
                 "attempts": pd.NA,
+                "constraint_based_similarity": pd.NA,
                 "slot_precision": pd.NA,
                 "slot_recall": pd.NA,
                 "slot_f1": pd.NA,
@@ -287,7 +295,9 @@ def evaluate(
                     original_rules,
                     generated_rules,
                 )
-
+                row["constraint_based_similarity"] = constraint_based_similarity(
+                    original_rules, generated_rules
+                )
                 row["slot_precision"] = slot_result.precision
                 row["slot_recall"] = slot_result.recall
                 row["slot_f1"] = slot_result.f1_score
@@ -476,40 +486,41 @@ if __name__ == "__main__":
         "19",
         "20",
     ]
-    load_dotenv(".env")
+    eval_ids = ["01"]
+    load_dotenv(".env", override=True)
     connections = [
-        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
-        LLMConnection(os.getenv("OPENAI_API_KEY", "gpt-5.4", "OpenAI", {})),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "granite4.1:30b",
-            AIProviders.AZURE,
+            "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "qwen3.6:35b-a3b",
-            AIProviders.AZURE,
+            "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "qwen3.5:9b",
-            AIProviders.AZURE,
+            "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "llama4:latest",
-            AIProviders.AZURE,
+            "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "mistral:7b",
-            AIProviders.AZURE,
+            "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
+        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
+        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4", "OpenAI", {}),
     ]
     for connection in connections:
         evaluate(eval_ids, connection)

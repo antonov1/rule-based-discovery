@@ -15,11 +15,12 @@ dependencies = [
     "networkx>=3.6.1",
     "pandas>=1.4.0",
     "pm4py>=2.7.19.8",
-    "promoai==2.1.2",
+    "powl>=2.3.7",
+    "promoai>=2.2.1",
     "pytest>=9.0.2",
     "pyvis>=0.3.2",
     "rustxes>=0.2.11",
-    "streamlit==1.55.0",
+    "streamlit==1.56.0",
     "typing>=3.7",
 ]
 [tool.setuptools]
