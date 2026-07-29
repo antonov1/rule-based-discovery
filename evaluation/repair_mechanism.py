@@ -134,11 +134,11 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
         if len(log_org) == 0:
             print(f"Trial {current_idx}: all traces removed", flush=True)
             return None
-        original_activities = len({e for trace in log_org for e in trace})
+        len({e for trace in log_org for e in trace})
 
         with time_limit(480):
             model_prepruned = normalize_tree(apply_IM(log_org))
-            prepruned_acts = len(get_non_tau_leaves(model_prepruned))
+            len(get_non_tau_leaves(model_prepruned))
             fitness_prepruned = fitness_alignment(log, model_prepruned)
             precision_prepruned = precision_alignment_tree(
                 log,
@@ -161,7 +161,6 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                     repair_mode=RepairVariant.TraceLevel,
                 )
             )
-            trace_acts = len(get_non_tau_leaves(model_trace))
             fitness_trace = fitness_alignment(log, model_trace)
             precision_trace = precision_alignment_tree(log, model_trace)
             conformance_trace = conformance(
@@ -181,7 +180,6 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                     repair_mode=RepairVariant.EventLevel,
                 )
             )
-            event_acts = len(get_non_tau_leaves(model_event))
 
             fitness_event = fitness_alignment(log, model_event)
             precision_event = precision_alignment_tree(log, model_event)
@@ -203,7 +201,6 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                 )
             )
 
-            edit_acts = len(get_non_tau_leaves(model_edit))
             fitness_edit = fitness_alignment(log, model_edit)
             precision_edit = precision_alignment_tree(log, model_edit)
             conformance_edit = conformance(
@@ -221,20 +218,15 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             "num_events": len(log),
             "num_cases": log["case:concept:name"].nunique(),
             "num_rules": len(sampled_rules),
-            "num_acts": original_activities,
-            "Prepruned_acts": prepruned_acts,
             "Prepruned_Fitness": fitness_prepruned,
             "Prepruned_Precision": precision_prepruned,
             "Prepruned_Conformance": conformance_prepruned[0],
-            "RIM_Acts_TraceLevel": trace_acts,
             "RIM_Fitness_TraceLevel": fitness_trace,
             "RIM_Precision_TraceLevel": precision_trace,
             "RIM_Conformance_TraceLevel": conformance_trace[0],
-            "RIM_Acts_EventLevel": event_acts,
             "RIM_Fitness_EventLevel": fitness_event,
             "RIM_Precision_EventLevel": precision_event,
             "RIM_Conformance_EventLevel": conformance_event[0],
-            "RIM_Acts_EditDistance": edit_acts,
             "RIM_Fitness_EditDistance": fitness_edit,
             "RIM_Precision_EditDistance": precision_edit,
             "RIM_Conformance_EditDistance": conformance_edit[0],
@@ -368,8 +360,11 @@ def evaluate_dataset(ids: List[str]):
                     flush=True,
                 )
                 continue
-            perc_of_conf_traces = len(log_org) / len(preprocessed_log) * 100
-
+            log_copy = preprocessed_log.copy()
+            for rule in sampled_rules:
+                log_copy = rule.apply(log_copy)
+            perc_of_conf_traces = len(log_copy) / len(preprocessed_log) * 100
+            original_acts = len({e for trace in log for e in trace})
             with time_limit(420):
                 print(
                     f"Trial {eval_id}: discovering prepruned model",
@@ -390,6 +385,8 @@ def evaluate_dataset(ids: List[str]):
                     * precision_prepruned
                     / (fitness_prepruned + precision_prepruned)
                 )
+                prepruned_acts = len(get_non_tau_leaves(model_prepruned))
+
                 conformance_prepruned = conformance(
                     model_prepruned,
                     sampled_rules,
@@ -412,6 +409,9 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.TraceLevel,
                     )
                 )
+
+                trace_acts = len(get_non_tau_leaves(model_trace))
+
                 fitness_trace = fitness_alignment(
                     log,
                     model_trace,
@@ -467,6 +467,7 @@ def evaluate_dataset(ids: List[str]):
                     sampled_rules,
                     alphabet,
                 )
+                event_acts = len(get_non_tau_leaves(model_event))
 
                 pm4py.write_ptml(
                     model_event,
@@ -495,6 +496,8 @@ def evaluate_dataset(ids: List[str]):
                 f1_edit = (
                     2 * fitness_edit * precision_edit / (fitness_edit + precision_edit)
                 )
+                edit_acts = len(get_non_tau_leaves(model_edit))
+
                 conformance_edit = conformance(
                     model_edit,
                     sampled_rules,
@@ -526,19 +529,24 @@ def evaluate_dataset(ids: List[str]):
                 "num_events": len(log),
                 "num_cases": log["case:concept:name"].nunique(),
                 "num_rules": len(sampled_rules),
+                "num_acts": original_acts,
                 "conforming_traces_perc": perc_of_conf_traces,
+                "Prepruned_acts": prepruned_acts,
                 "Prepruned_Fitness": fitness_prepruned,
                 "Prepruned_Precision": precision_prepruned,
                 "Prepruned_F1": f1_prepruned,
                 "Prepruned_Conformance": conformance_prepruned[0],
+                "RIM_TraceLevel_acts": trace_acts,
                 "RIM_Fitness_TraceLevel": fitness_trace,
                 "RIM_Precision_TraceLevel": precision_trace,
                 "RIM_F1_TraceLevel": f1_trace,
                 "RIM_Conformance_TraceLevel": conformance_trace[0],
+                "RIM_EventLevel_acts": event_acts,
                 "RIM_Fitness_EventLevel": fitness_event,
                 "RIM_Precision_EventLevel": precision_event,
                 "RIM_F1_EventLevel": f1_event,
                 "RIM_Conformance_EventLevel": conformance_event[0],
+                "RIM_EditDistance_acts": edit_acts,
                 "RIM_Fitness_EditDistance": fitness_edit,
                 "RIM_Precision_EditDistance": precision_edit,
                 "RIM_F1_EditDistance": f1_edit,
