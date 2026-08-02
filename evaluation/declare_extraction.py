@@ -1,5 +1,6 @@
 import json
 import os
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import product
@@ -218,21 +219,31 @@ def declarative_model_fitness(
             "LogFitness": 0.0,
             "AvgTraceFitness": 0.0,
         }
+
     min_replayable_length = len(min_replayable_trace)
 
     total_cost = 0
     perfectly_fitting = 0
     trace_fitness = []
 
-    for trace in event_log:
-        cost = repair_trace(trace, product)["cost"]
-        total_cost += cost
+    trace_counts = Counter(tuple(trace) for trace in event_log)
+
+    for trace, count in trace_counts.items():
+        if accepts_trace(trace, product):
+            cost = 0
+        else:
+            cost = repair_trace(trace, product)["cost"]
+
+        total_cost += cost * count
 
         if cost == 0:
-            perfectly_fitting += 1
+            perfectly_fitting += count
 
-        trace_fitness.append(1 - cost / (min_replayable_length + len(trace)))
+        fitness = 1 - cost / (min_replayable_length + len(trace))
+        trace_fitness.extend([fitness] * count)
+
     num_events = sum(len(trace) for trace in event_log)
+
     return {
         "PerfectlyFittingTraces": perfectly_fitting / len(event_log),
         "LogFitness": 1
@@ -628,6 +639,7 @@ def evaluate(
                 f"slot F1={slot_text}, "
                 f"generated fitness={fitness_text}, "
                 f"language difference={difference_text}"
+                f"log fitness={row['generated_log_fitness']:.3f}"
             )
 
     results_df = pd.DataFrame(rows)
