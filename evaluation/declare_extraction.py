@@ -451,7 +451,7 @@ def evaluate(
                 f"Event log for process {idx} is empty " "after preprocessing."
             )
 
-        max_trace_length = max(len(trace) for trace in event_log)
+        max_trace_length = min(max(len(trace) for trace in event_log), 10)
 
         path_all_traces = os.path.join(
             dataset_dir,
