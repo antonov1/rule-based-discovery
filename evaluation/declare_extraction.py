@@ -1,6 +1,5 @@
 import json
 import os
-from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import product
@@ -19,10 +18,7 @@ from rules import *
 import gzip
 from typing import Dict, Hashable, Optional
 
-import networkx as nx
-import numpy as np
 import pm4py
-from inductive_miner.im_utils import repair_trace
 
 
 @dataclass
@@ -37,67 +33,6 @@ class SlotEvaluation:
     precision: float
     recall: float
     f1_score: float
-
-
-def shortest_replayable_trace(
-    automaton: DFA,
-) -> Optional[list[str]]:
-    source = automaton.initial_state
-    sink = object()
-
-    graph = nx.MultiDiGraph()
-
-    graph.add_nodes_from(automaton.states)
-    graph.add_node(sink)
-
-    for state, state_transitions in automaton.transitions.items():
-        for symbol, next_state in state_transitions.items():
-            graph.add_edge(
-                state,
-                next_state,
-                symbol=symbol,
-                weight=1,
-            )
-
-    for final_state in automaton.final_states:
-        graph.add_edge(
-            final_state,
-            sink,
-            symbol=None,
-            weight=0,
-        )
-
-    try:
-        path = nx.dijkstra_path(
-            graph,
-            source=source,
-            target=sink,
-            weight="weight",
-        )
-    except nx.NetworkXNoPath:
-        return None
-
-    trace: list[str] = []
-
-    for current_state, next_state in zip(path, path[1:]):
-        edge_data = graph.get_edge_data(current_state, next_state)
-
-        if edge_data is None:
-            raise RuntimeError(
-                f"Missing edge data for {current_state!r} -> {next_state!r}"
-            )
-
-        selected_edge = min(
-            edge_data.values(),
-            key=lambda data: data["weight"],
-        )
-
-        symbol = selected_edge["symbol"]
-
-        if symbol is not None:
-            trace.append(symbol)
-
-    return trace
 
 
 def accepts_trace(trace: Iterable[str], automaton: DFA) -> bool:
@@ -202,53 +137,28 @@ def declarative_model_fitness(
     event_log: List[List[str]],
     alphabet: Set[str],
 ) -> Dict[str, float]:
-    automata = {rule: rule.to_automaton(alphabet) for rule in rule_set}
-    product = product_automaton(rule_set, alphabet, automata)
-
-    if not product.final_states:
+    if not rule_set:
         return {
-            "PerfectlyFittingTraces": 0.0,
-            "LogFitness": 0.0,
-            "AvgTraceFitness": 0.0,
+            "PerfectlyFittingTraces": 1.0,
+            "AvgTraceFitness": 1.0,
         }
 
-    min_replayable_trace = shortest_replayable_trace(product)
-    if min_replayable_trace is None:
-        return {
-            "PerfectlyFittingTraces": 0.0,
-            "LogFitness": 0.0,
-            "AvgTraceFitness": 0.0,
-        }
-
-    min_replayable_length = len(min_replayable_trace)
-
-    total_cost = 0
     perfectly_fitting = 0
-    trace_fitness = []
+    total_trace_fitness = 0.0
+    num_rules = len(rule_set)
 
-    trace_counts = Counter(tuple(trace) for trace in event_log)
+    for trace in event_log:
+        satisfied_rules = sum(bool(rule.apply([trace])) for rule in rule_set)
 
-    for trace, count in trace_counts.items():
-        if accepts_trace(trace, product):
-            cost = 0
-        else:
-            cost = repair_trace(trace, product)["cost"]
+        trace_fitness = satisfied_rules / num_rules
+        total_trace_fitness += trace_fitness
 
-        total_cost += cost * count
-
-        if cost == 0:
-            perfectly_fitting += count
-
-        fitness = 1 - cost / (min_replayable_length + len(trace))
-        trace_fitness.extend([fitness] * count)
-
-    num_events = sum(len(trace) for trace in event_log)
+        if satisfied_rules == num_rules:
+            perfectly_fitting += 1
 
     return {
         "PerfectlyFittingTraces": perfectly_fitting / len(event_log),
-        "LogFitness": 1
-        - total_cost / (len(event_log) * min_replayable_length + num_events),
-        "AvgTraceFitness": float(np.mean(trace_fitness)),
+        "AvgTraceFitness": total_trace_fitness / len(event_log),
     }
 
 
@@ -414,7 +324,6 @@ def evaluate(
         fitness: dict[str, float],
     ) -> None:
         row[f"{prefix}_perfectly_fitting_traces"] = fitness["PerfectlyFittingTraces"]
-        row[f"{prefix}_log_fitness"] = fitness["LogFitness"]
         row[f"{prefix}_avg_trace_fitness"] = fitness["AvgTraceFitness"]
 
     for idx in process_ids:
@@ -528,10 +437,8 @@ def evaluate(
                 "slot_recall": pd.NA,
                 "slot_f1": pd.NA,
                 "original_perfectly_fitting_traces": pd.NA,
-                "original_log_fitness": pd.NA,
                 "original_avg_trace_fitness": pd.NA,
                 "generated_perfectly_fitting_traces": pd.NA,
-                "generated_log_fitness": pd.NA,
                 "generated_avg_trace_fitness": pd.NA,
                 "error": pd.NA,
             }
@@ -639,7 +546,6 @@ def evaluate(
                 f"slot F1={slot_text}, "
                 f"generated fitness={fitness_text}, "
                 f"language difference={difference_text}"
-                f"log fitness={row['generated_log_fitness']:.3f}"
             )
 
     results_df = pd.DataFrame(rows)
@@ -659,10 +565,8 @@ def evaluate(
         "slot_recall",
         "slot_f1",
         "original_perfectly_fitting_traces",
-        "original_log_fitness",
         "original_avg_trace_fitness",
         "generated_perfectly_fitting_traces",
-        "generated_log_fitness",
         "generated_avg_trace_fitness",
     ]
 
@@ -780,10 +684,6 @@ def evaluate(
                 "original_perfectly_fitting_traces",
                 "mean",
             ),
-            original_log_fitness=(
-                "original_log_fitness",
-                "mean",
-            ),
             original_avg_trace_fitness=(
                 "original_avg_trace_fitness",
                 "mean",
@@ -795,14 +695,6 @@ def evaluate(
             ),
             generated_perfectly_fitting_traces_std=(
                 "generated_perfectly_fitting_traces",
-                "std",
-            ),
-            generated_log_fitness=(
-                "generated_log_fitness",
-                "mean",
-            ),
-            generated_log_fitness_std=(
-                "generated_log_fitness",
                 "std",
             ),
             generated_avg_trace_fitness=(
