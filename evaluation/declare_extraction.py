@@ -2,7 +2,8 @@ import json
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
-from itertools import chain, product
+from itertools import product
+from time import monotonic
 from typing import Any, Hashable, Iterator, List, Sequence, Set, Tuple
 
 import pandas as pd
@@ -127,15 +128,20 @@ def accepts_trace(trace: Iterable[str], automaton: DFA) -> bool:
 def all_traces_up_to_length(
     k: int,
     alphabet: Set[str],
+    timeout_seconds: Optional[float] = 300,
 ) -> Iterator[tuple[str, ...]]:
     if k < 0:
         raise ValueError("k must be non-negative")
 
     symbols = tuple(alphabet)
 
-    return chain.from_iterable(
-        product(symbols, repeat=length) for length in range(k + 1)
-    )
+    deadline = monotonic() + timeout_seconds if timeout_seconds is not None else None
+
+    for length in range(k + 1):
+        for trace in product(symbols, repeat=length):
+            if deadline is not None and monotonic() >= deadline:
+                return
+            yield trace
 
 
 def declarative_model_precision(
