@@ -365,11 +365,15 @@ def evaluate(
 
         event_log = pm4py.read_xes(log_path)
         event_log = pm4py.convert_to_dataframe(event_log)
-        if "case:case:concept:name" in event_log.columns:
+        if (
+            "case:case:concept:name" in event_log.columns
+            and "case:concept:name" not in event_log.columns
+        ):
             event_log.rename(
                 columns={"case:case:concept:name": "case:concept:name"},
                 inplace=True,
             )
+        print(event_log.head(5))
         event_log = preprocess_log(event_log)
 
         if not event_log:
