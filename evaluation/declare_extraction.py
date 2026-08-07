@@ -1,11 +1,13 @@
 import json
 import os
+from collections import Counter, defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import product
 from time import monotonic
 from typing import Any, Hashable, Iterator, List, Sequence, Set, Tuple
 
+import networkx as nx
 import pandas as pd
 from automata.fa.dfa import DFA
 from dotenv import load_dotenv
@@ -16,9 +18,12 @@ from rules.rule_utils import product_automaton
 from scipy.optimize import linear_sum_assignment
 from rules import *
 import gzip
+import signal
 from typing import Dict, Hashable, Optional
 
+import numpy as np
 import pm4py
+from inductive_miner.im_utils import repair_trace
 
 
 @dataclass
@@ -33,6 +38,233 @@ class SlotEvaluation:
     precision: float
     recall: float
     f1_score: float
+
+
+class TraceTimeout(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise TraceTimeout
+
+
+def prefix_of_log(log: List[List[str]]) -> List[List[str]]:
+    """Return all non-empty prefixes occurring in the log."""
+    return [trace[:i] for trace in log for i in range(1, len(trace) + 1)]
+
+
+def construct_prefix_automaton(log: List[List[str]]) -> DFA:
+    alphabet = {activity for trace in log for activity in trace}
+
+    prefix_to_state = {
+        (): "q0",
+    }
+
+    states = {"q0"}
+    transitions = {"q0": {}}
+    final_states = set()
+
+    next_state_number = 1
+
+    for trace in log:
+        current_prefix = ()
+        current_state = "q0"
+
+        if not trace:
+            final_states.add("q0")
+            continue
+
+        for activity in trace:
+            next_prefix = current_prefix + (activity,)
+
+            if next_prefix not in prefix_to_state:
+                next_state = f"q{next_state_number}"
+                next_state_number += 1
+
+                prefix_to_state[next_prefix] = next_state
+                states.add(next_state)
+                transitions[next_state] = {}
+            else:
+                next_state = prefix_to_state[next_prefix]
+
+            transitions[current_state][activity] = next_state
+
+            current_prefix = next_prefix
+            current_state = next_state
+
+        final_states.add(current_state)
+
+    return DFA(
+        states=states,
+        input_symbols=alphabet,
+        transitions=transitions,
+        initial_state="q0",
+        final_states=final_states,
+        allow_partial=True,
+    )
+
+
+def global_escaping_edge_precision(
+    log: List[List[str]],
+    constraints: List[AbstractRule],
+) -> float:
+    if not log:
+        return 1.0
+
+    prefix_automaton = construct_prefix_automaton(log)
+    alphabet = set(prefix_automaton.input_symbols)
+
+    rule_automata = {rule: rule.to_automaton(alphabet) for rule in constraints}
+
+    product = product_automaton(
+        constraints,
+        alphabet,
+        rule_automata,
+    )
+
+    if not product.final_states:
+        return 0.0
+
+    reverse_transitions: Dict[object, Set[object]] = defaultdict(set)
+
+    for source_state, outgoing in product.transitions.items():
+        for target_state in outgoing.values():
+            reverse_transitions[target_state].add(source_state)
+
+    live_states: Set[object] = set(product.final_states)
+    queue = deque(product.final_states)
+
+    while queue:
+        state = queue.popleft()
+
+        for predecessor in reverse_transitions.get(state, set()):
+            if predecessor not in live_states:
+                live_states.add(predecessor)
+                queue.append(predecessor)
+
+    if product.initial_state not in live_states:
+        return 0.0
+
+    prefix_frequency: Counter[Tuple[str, ...]] = Counter()
+    observed_next: Dict[Tuple[str, ...], Set[str]] = defaultdict(set)
+
+    for trace in log:
+        clean_trace = [activity for activity in trace if activity in alphabet]
+
+        # Include the empty prefix.
+        for index in range(len(clean_trace) + 1):
+            prefix = tuple(clean_trace[:index])
+            prefix_frequency[prefix] += 1
+
+            if index < len(clean_trace):
+                observed_next[prefix].add(clean_trace[index])
+
+    total_enabled = 0
+    total_observed_and_enabled = 0
+
+    for prefix, frequency in prefix_frequency.items():
+        model_state = product.initial_state
+        valid_prefix = True
+
+        for activity in prefix:
+            outgoing = product.transitions.get(model_state, {})
+
+            if activity not in outgoing:
+                valid_prefix = False
+                break
+
+            next_state = outgoing[activity]
+
+            if next_state not in live_states:
+                valid_prefix = False
+                break
+
+            model_state = next_state
+
+        if not valid_prefix:
+            continue
+
+        observed_edges = observed_next.get(prefix, set())
+
+        model_enabled_edges = {
+            activity
+            for activity, target_state in product.transitions.get(
+                model_state, {}
+            ).items()
+            if target_state in live_states
+        }
+
+        total_enabled += frequency * len(model_enabled_edges)
+
+        total_observed_and_enabled += frequency * len(
+            observed_edges & model_enabled_edges
+        )
+
+    if total_enabled == 0:
+        return 1.0
+
+    return total_observed_and_enabled / total_enabled
+
+
+def shortest_replayable_trace(
+    automaton: DFA,
+) -> Optional[list[str]]:
+    source = automaton.initial_state
+    sink = object()
+
+    graph = nx.MultiDiGraph()
+
+    graph.add_nodes_from(automaton.states)
+    graph.add_node(sink)
+
+    for state, state_transitions in automaton.transitions.items():
+        for symbol, next_state in state_transitions.items():
+            graph.add_edge(
+                state,
+                next_state,
+                symbol=symbol,
+                weight=1,
+            )
+
+    for final_state in automaton.final_states:
+        graph.add_edge(
+            final_state,
+            sink,
+            symbol=None,
+            weight=0,
+        )
+
+    try:
+        path = nx.dijkstra_path(
+            graph,
+            source=source,
+            target=sink,
+            weight="weight",
+        )
+    except nx.NetworkXNoPath:
+        return None
+
+    trace: list[str] = []
+
+    for current_state, next_state in zip(path, path[1:]):
+        edge_data = graph.get_edge_data(current_state, next_state)
+
+        if edge_data is None:
+            raise RuntimeError(
+                f"Missing edge data for {current_state!r} -> {next_state!r}"
+            )
+
+        selected_edge = min(
+            edge_data.values(),
+            key=lambda data: data["weight"],
+        )
+
+        symbol = selected_edge["symbol"]
+
+        if symbol is not None:
+            trace.append(symbol)
+
+    return trace
 
 
 def accepts_trace(trace: Iterable[str], automaton: DFA) -> bool:
@@ -137,28 +369,73 @@ def declarative_model_fitness(
     event_log: List[List[str]],
     alphabet: Set[str],
 ) -> Dict[str, float]:
-    if not rule_set:
+    automata = {rule: rule.to_automaton(alphabet) for rule in rule_set}
+    product = product_automaton(rule_set, alphabet, automata)
+
+    if not product.final_states:
         return {
-            "PerfectlyFittingTraces": 1.0,
-            "AvgTraceFitness": 1.0,
+            "PerfectlyFittingTraces": 0.0,
+            "LogFitness": 0.0,
+            "AvgTraceFitness": 0.0,
+            "AvgConstraintFitness": 0.0,
         }
 
+    min_replayable_trace = shortest_replayable_trace(product)
+    if min_replayable_trace is None:
+        return {
+            "PerfectlyFittingTraces": 0.0,
+            "LogFitness": 0.0,
+            "AvgTraceFitness": 0.0,
+            "AvgConstraintConformance": 0.0,
+        }
+    log_copy = [list(trace) for trace in event_log]
+    rule_fitness_values = []
+    for rule in rule_set:
+        log_copy = rule.apply(log_copy)
+        conformance = len(log_copy) / len(event_log) if log_copy else 0.0
+        log_copy = [list(trace) for trace in event_log]
+        rule_fitness_values.append(conformance)
+
+    min_replayable_length = len(min_replayable_trace)
+
+    total_cost = 0
     perfectly_fitting = 0
-    total_trace_fitness = 0.0
-    num_rules = len(rule_set)
+    trace_fitness = []
 
-    for trace in event_log:
-        satisfied_rules = sum(bool(rule.apply([trace])) for rule in rule_set)
+    trace_counts = Counter(tuple(trace) for trace in event_log)
 
-        trace_fitness = satisfied_rules / num_rules
-        total_trace_fitness += trace_fitness
+    for trace, count in trace_counts.items():
+        try:
+            signal.alarm(30)
 
-        if satisfied_rules == num_rules:
-            perfectly_fitting += 1
+            if accepts_trace(trace, product):
+                cost = 0
+            else:
+                cost = repair_trace(trace, product)["cost"]
+
+        except TraceTimeout:
+            print(f"Trace timed out: {trace}")
+            continue  # Skip this trace if it times out
+
+        finally:
+            signal.alarm(0)
+
+        total_cost += cost * count
+
+        if cost == 0:
+            perfectly_fitting += count
+
+    fitness = 1 - cost / (min_replayable_length + len(trace))
+    trace_fitness.extend([fitness] * count)
+
+    num_events = sum(len(trace) for trace in event_log)
 
     return {
         "PerfectlyFittingTraces": perfectly_fitting / len(event_log),
-        "AvgTraceFitness": total_trace_fitness / len(event_log),
+        "LogFitness": 1
+        - total_cost / (len(event_log) * min_replayable_length + num_events),
+        "AvgTraceFitness": float(np.mean(trace_fitness)),
+        "AvgConstraintConformance": float(np.mean(rule_fitness_values)),
     }
 
 
@@ -783,12 +1060,6 @@ if __name__ == "__main__":
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "mistral-medium-3.5:latest",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "laguna-s-2.1:latest",
             "Azure",
             {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
         ),
