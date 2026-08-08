@@ -3,9 +3,7 @@ import os
 from collections import Counter, defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import dataclass
-from itertools import product
-from time import monotonic
-from typing import Any, Hashable, Iterator, List, Sequence, Set, Tuple
+from typing import Any, Hashable, List, Sequence, Set, Tuple
 
 import networkx as nx
 import pandas as pd
@@ -17,7 +15,6 @@ from promoai.general_utils.llm_connection import LLMConnection
 from rules.rule_utils import product_automaton
 from scipy.optimize import linear_sum_assignment
 from rules import *
-import gzip
 import signal
 from typing import Dict, Hashable, Optional
 
@@ -123,6 +120,10 @@ def global_escaping_edge_precision(
     )
 
     if not product.final_states:
+        print("Number of final states:", len(product.final_states))
+        print("Initial state:", product.initial_state)
+        print("Number of product states:", len(product.states))
+        input("dh")
         return 0.0
 
     reverse_transitions: Dict[object, Set[object]] = defaultdict(set)
@@ -293,25 +294,6 @@ def accepts_trace(trace: Iterable[str], automaton: DFA) -> bool:
     return state in automaton.final_states
 
 
-def all_traces_up_to_length(
-    k: int,
-    alphabet: Set[str],
-    timeout_seconds: Optional[float] = 300,
-) -> Iterator[tuple[str, ...]]:
-    if k < 0:
-        raise ValueError("k must be non-negative")
-
-    symbols = tuple(alphabet)
-
-    deadline = monotonic() + timeout_seconds if timeout_seconds is not None else None
-
-    for length in range(k + 1):
-        for trace in product(symbols, repeat=length):
-            if deadline is not None and monotonic() >= deadline:
-                return
-            yield trace
-
-
 def declarative_model_precision(
     original_rule_set: Set[AbstractRule],
     generated_rule_set: Set[AbstractRule],
@@ -377,7 +359,7 @@ def declarative_model_fitness(
             "PerfectlyFittingTraces": 0.0,
             "LogFitness": 0.0,
             "AvgTraceFitness": 0.0,
-            "AvgConstraintFitness": 0.0,
+            "AvgConstraintConformance": 0.0,
         }
 
     min_replayable_trace = shortest_replayable_trace(product)
@@ -406,7 +388,7 @@ def declarative_model_fitness(
 
     for trace, count in trace_counts.items():
         try:
-            signal.alarm(30)
+            signal.alarm(60)
 
             if accepts_trace(trace, product):
                 cost = 0
@@ -601,7 +583,11 @@ def evaluate(
         fitness: dict[str, float],
     ) -> None:
         row[f"{prefix}_perfectly_fitting_traces"] = fitness["PerfectlyFittingTraces"]
+        row[f"{prefix}_log_fitness"] = fitness["LogFitness"]
         row[f"{prefix}_avg_trace_fitness"] = fitness["AvgTraceFitness"]
+        row[f"{prefix}_avg_constraint_conformance"] = fitness[
+            "AvgConstraintConformance"
+        ]
 
     for idx in process_ids:
         json_path = os.path.join(
@@ -642,15 +628,20 @@ def evaluate(
 
         event_log = pm4py.read_xes(log_path)
         event_log = pm4py.convert_to_dataframe(event_log)
+
         if (
             "case:case:concept:name" in event_log.columns
             and "case:concept:name" not in event_log.columns
         ):
             event_log.rename(
-                columns={"case:case:concept:name": "case:concept:name"},
+                columns={
+                    "case:case:concept:name": "case:concept:name",
+                },
                 inplace=True,
             )
+
         print(event_log.head(5))
+
         event_log = preprocess_log(event_log)
 
         if not event_log:
@@ -658,42 +649,17 @@ def evaluate(
                 f"Event log for process {idx} is empty " "after preprocessing."
             )
 
-        max_trace_length = min(max(len(trace) for trace in event_log), 5)
+        # Original-model evaluation
 
-        path_all_traces = os.path.join(
-            dataset_dir,
-            f"{idx}_all_traces.json.gz",
-        )
-
-        if not os.path.exists(path_all_traces):
-            all_traces = list(
-                all_traces_up_to_length(
-                    max_trace_length,
-                    alphabet,
-                )
-            )
-
-            with gzip.open(
-                path_all_traces,
-                "wt",
-                encoding="utf-8",
-            ) as file:
-                json.dump(
-                    [list(trace) for trace in all_traces],
-                    file,
-                    ensure_ascii=False,
-                )
-        else:
-            with gzip.open(
-                path_all_traces,
-                "rt",
-                encoding="utf-8",
-            ) as file:
-                all_traces = [tuple(trace) for trace in json.load(file)]
         original_fitness = declarative_model_fitness(
             original_rule_set,
             event_log,
             alphabet,
+        )
+
+        original_precision = global_escaping_edge_precision(
+            event_log,
+            original_rules,
         )
 
         for description_type in description_types:
@@ -710,17 +676,25 @@ def evaluate(
                 "original_rules": serialize_rules(original_rules),
                 "generated_rules": pd.NA,
                 "attempts": pd.NA,
-                "original_language_coverage": pd.NA,
-                "generated_language_coverage": pd.NA,
-                "language_difference": pd.NA,
+                # Precision
+                "original_precision": original_precision,
+                "generated_precision": pd.NA,
+                # Constraint-set similarity
                 "constraint_based_similarity": pd.NA,
+                # Slot filling
                 "slot_precision": pd.NA,
                 "slot_recall": pd.NA,
                 "slot_f1": pd.NA,
+                # Original fitness
                 "original_perfectly_fitting_traces": pd.NA,
+                "original_log_fitness": pd.NA,
                 "original_avg_trace_fitness": pd.NA,
+                "original_avg_constraint_conformance": pd.NA,
+                # Generated fitness
                 "generated_perfectly_fitting_traces": pd.NA,
+                "generated_log_fitness": pd.NA,
                 "generated_avg_trace_fitness": pd.NA,
+                "generated_avg_constraint_conformance": pd.NA,
                 "error": pd.NA,
             }
 
@@ -760,19 +734,15 @@ def evaluate(
                 row["generated_rules"] = serialize_rules(generated_rules)
                 row["attempts"] = attempts + 1
 
-                # Language-based behavioral coverage
-                language_result = declarative_model_precision(
-                    original_rule_set,
-                    generated_rule_set,
-                    all_traces,
-                    alphabet,
+                # Precision
+
+                row["generated_precision"] = global_escaping_edge_precision(
+                    event_log,
+                    generated_rules,
                 )
 
-                row["original_language_coverage"] = language_result.original_precision
-                row["generated_language_coverage"] = language_result.generated_precision
-                row["language_difference"] = language_result.difference
+                # Fitness
 
-                # Log-based fitness
                 generated_fitness = declarative_model_fitness(
                     generated_rule_set,
                     event_log,
@@ -785,13 +755,15 @@ def evaluate(
                     fitness=generated_fitness,
                 )
 
-                #  Constraint-set similarity
+                # Constraint-based similarity
+
                 row["constraint_based_similarity"] = constraint_based_similarity(
                     original_rules,
                     generated_rules,
                 )
 
                 # Slot-level evaluation
+
                 slot_result = evaluate_slot_filling(
                     original_rules,
                     generated_rules,
@@ -807,26 +779,28 @@ def evaluate(
             rows.append(row)
 
             slot_f1 = row["slot_f1"]
-            generated_avg_fitness = row["generated_avg_trace_fitness"]
-            language_difference = row["language_difference"]
+            generated_precision = row["generated_precision"]
+            generated_log_fitness = row["generated_log_fitness"]
 
             slot_text = f"{float(slot_f1):.3f}" if pd.notna(slot_f1) else "N/A"
-            fitness_text = (
-                f"{float(generated_avg_fitness):.3f}"
-                if pd.notna(generated_avg_fitness)
+
+            precision_text = (
+                f"{float(generated_precision):.3f}"
+                if pd.notna(generated_precision)
                 else "N/A"
             )
-            difference_text = (
-                f"{float(language_difference):.3f}"
-                if pd.notna(language_difference)
+
+            fitness_text = (
+                f"{float(generated_log_fitness):.3f}"
+                if pd.notna(generated_log_fitness)
                 else "N/A"
             )
 
             print(
                 f"{idx} [{description_type}] "
                 f"slot F1={slot_text}, "
-                f"generated fitness={fitness_text}, "
-                f"language difference={difference_text}"
+                f"generated precision={precision_text}, "
+                f"generated log fitness={fitness_text}"
             )
 
     results_df = pd.DataFrame(rows)
@@ -838,17 +812,25 @@ def evaluate(
         "original_rule_count",
         "generated_rule_count",
         "attempts",
-        "original_language_coverage",
-        "generated_language_coverage",
-        "language_difference",
+        # Precision
+        "original_precision",
+        "generated_precision",
+        # Constraint similarity
         "constraint_based_similarity",
+        # Slot evaluation
         "slot_precision",
         "slot_recall",
         "slot_f1",
+        # Original fitness
         "original_perfectly_fitting_traces",
+        "original_log_fitness",
         "original_avg_trace_fitness",
+        "original_avg_constraint_conformance",
+        # Generated fitness
         "generated_perfectly_fitting_traces",
+        "generated_log_fitness",
         "generated_avg_trace_fitness",
+        "generated_avg_constraint_conformance",
     ]
 
     for column in numeric_columns:
@@ -917,24 +899,28 @@ def evaluate(
                 "attempts",
                 "mean",
             ),
-            # Language-based evaluation
-            original_language_coverage=(
-                "original_language_coverage",
+            # --------------------------------------------------------
+            # Precision
+            # --------------------------------------------------------
+            original_precision=(
+                "original_precision",
                 "mean",
             ),
-            generated_language_coverage=(
-                "generated_language_coverage",
-                "mean",
-            ),
-            language_difference=(
-                "language_difference",
-                "mean",
-            ),
-            language_difference_std=(
-                "language_difference",
+            original_precision_std=(
+                "original_precision",
                 "std",
             ),
-            # Constraint-based evaluation
+            generated_precision=(
+                "generated_precision",
+                "mean",
+            ),
+            generated_precision_std=(
+                "generated_precision",
+                "std",
+            ),
+            # --------------------------------------------------------
+            # Constraint-set similarity
+            # --------------------------------------------------------
             constraint_based_similarity=(
                 "constraint_based_similarity",
                 "mean",
@@ -943,7 +929,9 @@ def evaluate(
                 "constraint_based_similarity",
                 "std",
             ),
+            # --------------------------------------------------------
             # Slot-based evaluation
+            # --------------------------------------------------------
             slot_precision=(
                 "slot_precision",
                 "mean",
@@ -960,16 +948,28 @@ def evaluate(
                 "slot_f1",
                 "std",
             ),
+            # --------------------------------------------------------
             # Original-model fitness
+            # --------------------------------------------------------
             original_perfectly_fitting_traces=(
                 "original_perfectly_fitting_traces",
+                "mean",
+            ),
+            original_log_fitness=(
+                "original_log_fitness",
                 "mean",
             ),
             original_avg_trace_fitness=(
                 "original_avg_trace_fitness",
                 "mean",
             ),
+            original_avg_constraint_conformance=(
+                "original_avg_constraint_conformance",
+                "mean",
+            ),
+            # --------------------------------------------------------
             # Generated-model fitness
+            # --------------------------------------------------------
             generated_perfectly_fitting_traces=(
                 "generated_perfectly_fitting_traces",
                 "mean",
@@ -978,12 +978,28 @@ def evaluate(
                 "generated_perfectly_fitting_traces",
                 "std",
             ),
+            generated_log_fitness=(
+                "generated_log_fitness",
+                "mean",
+            ),
+            generated_log_fitness_std=(
+                "generated_log_fitness",
+                "std",
+            ),
             generated_avg_trace_fitness=(
                 "generated_avg_trace_fitness",
                 "mean",
             ),
             generated_avg_trace_fitness_std=(
                 "generated_avg_trace_fitness",
+                "std",
+            ),
+            generated_avg_constraint_conformance=(
+                "generated_avg_constraint_conformance",
+                "mean",
+            ),
+            generated_avg_constraint_conformance_std=(
+                "generated_avg_constraint_conformance",
                 "std",
             ),
         )
@@ -996,76 +1012,19 @@ def evaluate(
         index=False,
     )
 
-    print(f"Detailed results saved to: " f"{results_path}")
-    print(f"Summary saved to: " f"{summary_path}")
+    print(f"Detailed results saved to: {results_path}")
+    print(f"Summary saved to: {summary_path}")
 
     return results_df, summary_df
 
 
 if __name__ == "__main__":
     eval_ids = [
-        "01",
-        "02",
         "03",
-        "04",
-        "05",
-        "06",
-        "07",
-        "08",
-        "09",
-        "10",
-        "11",
-        "12",
-        "13",
-        "14",
-        "15",
-        "16",
-        "17",
-        "18",
-        "19",
-        "20",
     ]
     load_dotenv(".env", override=True)
     connections = [
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "granite4.1:30b",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "qwen3.6:35b-a3b",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "qwen3.5:9b",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "llama4:latest",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "mistral:7b",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
-        LLMConnection(
-            os.getenv("AZURE_ONE_KEY"),
-            "mistral-medium-3.5:latest",
-            "Azure",
-            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
-        ),
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
-        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.6-luna", "OpenAI", {}),
-        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4", "OpenAI", {}),
     ]
 
     for connection in connections:

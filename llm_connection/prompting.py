@@ -56,8 +56,11 @@ def add_few_shot_examples():
 def generate_declare_prompt(process_description, activities, include_examples=True):
 
     system_instructions = (
-        "You are an expert in Process Mining and DECLARE modeling. Your task is to derive "
-        "DECLARE rules based on a description of a process or its constraints.\n\n"
+        "You are an expert in Process Mining and DECLARE modeling. "
+        "Your task is to construct a declarative process model from the given natural-language "
+        "process description by translating the described process behavior into a set of DECLARE constraints.\n\n"
+        "Infer the constraints that best characterize the allowed process behavior described in the text. "
+        "Do not introduce constraints that are not supported by the description.\n\n"
         "The activities involved in the process are: " + ", ".join(activities) + ".\n\n"
         "Use only the following rules:\n"
         "- AtMostOnce(A): Activity A occurs at most once in every trace.\n"
@@ -67,11 +70,16 @@ def generate_declare_prompt(process_description, activities, include_examples=Tr
         "- CoExistence(A, B): If A occurs, B must occur; if B occurs, A must occur.\n"
         "- NotCoExistence(A, B): Activities A and B cannot coexist in the same trace.\n"
         "- NotSuccession(A, B): Activity B never follows activity A in the same trace.\n"
-        "- Precedence(A, B): Activity B can only occur if activity A has occurred before it. Use Precedence if it is stated something like 'Y cannot happen before X'.\n"
-        "- ChainPrecedence(A, B): Activity B can only occur if activity A has occurred **directly** before it.\n"
-        "- RespondedExistence(A, B): If activity A occurs, activity B must also occur (anywhere in the trace).\n"
-        "- Response(A, B): If activity A occurs, activity B must eventually follow it. Use Response if the text describes process state progression, e.g., 'After X, Y happens',  'Once X, Y starts', etc. \n"
-        "- ChainResponse(A, B): If activity A occurs, activity B must **directly** follow it.\n\n"
+        "- Precedence(A, B): Activity B can only occur if activity A has occurred before it. "
+        "Use Precedence when the text expresses a prerequisite, such as 'Y cannot happen before X'.\n"
+        "- ChainPrecedence(A, B): Activity B can only occur if activity A has occurred directly before it.\n"
+        "- RespondedExistence(A, B): If activity A occurs, activity B must also occur somewhere in the trace.\n"
+        "- Response(A, B): If activity A occurs, activity B must eventually follow it. "
+        "Prefer Response when the text describes forward process progression, such as "
+        "'After X, Y happens', 'Once X occurs, Y starts', or 'X is followed by Y'.\n"
+        "- ChainResponse(A, B): If activity A occurs, activity B must directly follow it.\n\n"
+        "Use the activity names exactly as provided in the activity list. "
+        "Do not invent, rename, merge, or paraphrase activities.\n\n"
         "The expected output must be a Python code snippet with the following format:\n"
         "```python\n"
         'rule1 = RuleName("ActivityA")\n'
@@ -79,7 +87,6 @@ def generate_declare_prompt(process_description, activities, include_examples=Tr
         "```\n"
         "Return ONLY the code block."
     )
-
     # Combine instructions with the specific process description
     full_prompt = (
         f"{system_instructions}\n\n{add_few_shot_examples}\n\nProcess Description:\n{process_description}"
