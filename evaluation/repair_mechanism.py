@@ -3,6 +3,7 @@ import os
 import random
 import re
 import signal
+import time
 import traceback
 from contextlib import contextmanager
 from typing import List, Set
@@ -370,7 +371,9 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: discovering prepruned model",
                     flush=True,
                 )
+                time_prepruned = time.perf_counter()
                 model_prepruned = normalize_tree(apply_IM(log_org))
+                time_prepruned = time.perf_counter() - time_prepruned
                 fitness_prepruned = fitness_alignment(
                     log,
                     model_prepruned,
@@ -402,11 +405,15 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: trace-level model",
                     flush=True,
                 )
+                time_norepair = time.perf_counter()
+
                 model_norepair = normalize_tree(
                     preprocess_and_apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.Naive
                     )
                 )
+                time_norepair = time.perf_counter() - time_norepair
+
                 norepair_acts = len(get_non_tau_leaves(model_norepair))
                 fitness_norepair = fitness_alignment(log, model_norepair)
                 precision_norepair = precision_alignment_tree(log, model_norepair)
@@ -419,6 +426,7 @@ def evaluate_dataset(ids: List[str]):
                 conformance_norepair = conformance(
                     model_norepair, sampled_rules, alphabet
                 )
+                time_trace = time.perf_counter()
                 model_trace = normalize_tree(
                     preprocess_and_apply_IM_with_rules(
                         log,
@@ -426,6 +434,7 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.TraceLevel,
                     )
                 )
+                time_trace = time.perf_counter() - time_trace
 
                 trace_acts = len(get_non_tau_leaves(model_trace))
 
@@ -458,6 +467,8 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: event-level model",
                     flush=True,
                 )
+                time_event = time.perf_counter()
+
                 model_event = normalize_tree(
                     preprocess_and_apply_IM_with_rules(
                         log,
@@ -465,6 +476,8 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.EventLevel,
                     )
                 )
+                time_event = time.perf_counter() - time_event
+
                 fitness_event = fitness_alignment(
                     log,
                     model_event,
@@ -495,6 +508,8 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: edit-distance model",
                     flush=True,
                 )
+                time_edit = time.perf_counter()
+
                 model_edit = normalize_tree(
                     preprocess_and_apply_IM_with_rules(
                         log,
@@ -502,6 +517,7 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.EditDistance,
                     )
                 )
+                time_edit = time.perf_counter() - time_edit
                 fitness_edit = fitness_alignment(
                     log,
                     model_edit,
@@ -573,6 +589,11 @@ def evaluate_dataset(ids: List[str]):
                 "RIM_Precision_EditDistance": precision_edit,
                 "RIM_F1_EditDistance": f1_edit,
                 "RIM_Conformance_EditDistance": conformance_edit[0],
+                "Time_Prepruned": time_prepruned,
+                "Time_RIM_NoRepair": time_norepair,
+                "Time_RIM_TraceLevel": time_trace,
+                "Time_RIM_EventLevel": time_event,
+                "Time_RIM_Edit": time_edit,
             }
         )
 
