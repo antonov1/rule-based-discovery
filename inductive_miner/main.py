@@ -354,8 +354,18 @@ def apply_IM_with_rules(
             res.parent = process_tree.parent
             return res
 
+    flower = flower_model(log, rules=rules)
+
+    if flower is None:
+        raise RuntimeError(
+            "flower_model returned None: "
+            f"log={log}, "
+            f"activities={sorted({a for t in log for a in t})}, "
+            f"rules={[str(r) for r in rules]}"
+        )
+
     return mine_decomposition(
-        decomposition=flower_model(log, rules=rules),
+        decomposition=flower,
         im_function=apply_IM_with_rules,
         repair_mode=repair_mode,
         noise_threshold=noise_threshold,
