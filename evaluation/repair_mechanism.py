@@ -402,6 +402,23 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: trace-level model",
                     flush=True,
                 )
+                model_norepair = normalize_tree(
+                    preprocess_and_apply_IM_with_rules(
+                        log, rules=sampled_rules, repair_mode=RepairVariant.Naive
+                    )
+                )
+                norepair_acts = len(get_non_tau_leaves(model_norepair))
+                fitness_norepair = fitness_alignment(log, model_norepair)
+                precision_norepair = precision_alignment_tree(log, model_norepair)
+                f1_norepair = (
+                    2
+                    * fitness_trace
+                    * precision_trace
+                    / (fitness_trace + precision_trace)
+                )
+                conformance_norepair = conformance(
+                    model_norepair, sampled_rules, alphabet
+                )
                 model_trace = normalize_tree(
                     preprocess_and_apply_IM_with_rules(
                         log,
@@ -536,6 +553,11 @@ def evaluate_dataset(ids: List[str]):
                 "Prepruned_Precision": precision_prepruned,
                 "Prepruned_F1": f1_prepruned,
                 "Prepruned_Conformance": conformance_prepruned[0],
+                "RIM_NoRepair_acts": norepair_acts,
+                "RIM_Fitness_NoRepair": fitness_norepair,
+                "RIM_Precision_NoRepair": precision_norepair,
+                "RIM_F1_NoRepair": f1_norepair,
+                "RIM_Conformance_NoRepair": conformance_norepair[0],
                 "RIM_TraceLevel_acts": trace_acts,
                 "RIM_Fitness_TraceLevel": fitness_trace,
                 "RIM_Precision_TraceLevel": precision_trace,
@@ -575,5 +597,5 @@ def evaluate_dataset(ids: List[str]):
 if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
     original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
-    ids = original_dataset["trial"][:200]
+    ids = original_dataset["trial"][:300]
     evaluate_dataset(ids)

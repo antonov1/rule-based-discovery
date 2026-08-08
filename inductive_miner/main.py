@@ -556,7 +556,7 @@ if __name__ == "__main__":
     print(f"Rules are: {rules}")
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.TraceLevel, noise_threshold=0
+        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.1752
     )
     model = normalize_tree(model)
     pm4py.view_process_tree(model)  # Visualize the process tree
