@@ -123,7 +123,6 @@ def global_escaping_edge_precision(
         print("Number of final states:", len(product.final_states))
         print("Initial state:", product.initial_state)
         print("Number of product states:", len(product.states))
-        input("dh")
         return 0.0
 
     reverse_transitions: Dict[object, Set[object]] = defaultdict(set)
@@ -356,6 +355,7 @@ def declarative_model_fitness(
 
     if not product.final_states:
         return {
+            "Satisfiable": False,
             "PerfectlyFittingTraces": 0.0,
             "LogFitness": 0.0,
             "AvgTraceFitness": 0.0,
@@ -365,6 +365,7 @@ def declarative_model_fitness(
     min_replayable_trace = shortest_replayable_trace(product)
     if min_replayable_trace is None:
         return {
+            "Satisfiable": False,
             "PerfectlyFittingTraces": 0.0,
             "LogFitness": 0.0,
             "AvgTraceFitness": 0.0,
@@ -413,6 +414,7 @@ def declarative_model_fitness(
     num_events = sum(len(trace) for trace in event_log)
 
     return {
+        "Satisfiable": True,
         "PerfectlyFittingTraces": perfectly_fitting / len(event_log),
         "LogFitness": 1
         - total_cost / (len(event_log) * min_replayable_length + num_events),
@@ -580,8 +582,9 @@ def evaluate(
     def add_fitness_metrics(
         row: dict,
         prefix: str,
-        fitness: dict[str, float],
+        fitness: dict[str, Any],
     ) -> None:
+        row[f"{prefix}_satisfiable"] = fitness["Satisfiable"]
         row[f"{prefix}_perfectly_fitting_traces"] = fitness["PerfectlyFittingTraces"]
         row[f"{prefix}_log_fitness"] = fitness["LogFitness"]
         row[f"{prefix}_avg_trace_fitness"] = fitness["AvgTraceFitness"]
@@ -686,11 +689,13 @@ def evaluate(
                 "slot_recall": pd.NA,
                 "slot_f1": pd.NA,
                 # Original fitness
+                "original_satisfiable": pd.NA,
                 "original_perfectly_fitting_traces": pd.NA,
                 "original_log_fitness": pd.NA,
                 "original_avg_trace_fitness": pd.NA,
                 "original_avg_constraint_conformance": pd.NA,
                 # Generated fitness
+                "generated_satisfiable": pd.NA,
                 "generated_perfectly_fitting_traces": pd.NA,
                 "generated_log_fitness": pd.NA,
                 "generated_avg_trace_fitness": pd.NA,
