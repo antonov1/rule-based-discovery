@@ -419,9 +419,9 @@ def evaluate_dataset(ids: List[str]):
                 precision_norepair = precision_alignment_tree(log, model_norepair)
                 f1_norepair = (
                     2
-                    * fitness_trace
-                    * precision_trace
-                    / (fitness_trace + precision_trace)
+                    * fitness_norepair
+                    * precision_norepair
+                    / (fitness_norepair + precision_norepair)
                 )
                 conformance_norepair = conformance(
                     model_norepair, sampled_rules, alphabet
