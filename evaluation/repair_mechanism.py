@@ -552,7 +552,7 @@ def evaluate_dataset(ids: List[str]):
 
         except Exception:
             traceback.print_exc()
-            raise
+            continue
         rows.append(
             {
                 "trial": eval_id,

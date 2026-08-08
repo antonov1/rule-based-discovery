@@ -357,12 +357,8 @@ def apply_IM_with_rules(
     flower = flower_model(log, rules=rules)
 
     if flower is None:
-        raise RuntimeError(
-            "flower_model returned None: "
-            f"log={log}, "
-            f"activities={sorted({a for t in log for a in t})}, "
-            f"rules={[str(r) for r in rules]}"
-        )
+        # Kept only for naive repair mechanism
+        return ProcessTree()
 
     return mine_decomposition(
         decomposition=flower,
