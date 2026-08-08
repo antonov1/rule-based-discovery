@@ -366,7 +366,7 @@ def evaluate_dataset(ids: List[str]):
                 log_copy = rule.apply(log_copy)
             perc_of_conf_traces = len(log_copy) / len(preprocessed_log) * 100
             original_acts = len({e for trace in preprocessed_log for e in trace})
-            with time_limit(300):
+            with time_limit(420):
                 print(
                     f"Trial {eval_id}: discovering prepruned model",
                     flush=True,
