@@ -1020,11 +1020,70 @@ def evaluate(
 
 if __name__ == "__main__":
     eval_ids = [
+        "01",
+        "02",
         "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
     ]
     load_dotenv(".env", override=True)
     connections = [
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "granite4.1:30b",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "qwen3.6:35b-a3b",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "qwen3.5:9b",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "llama4:latest",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "mistral:7b",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
+        LLMConnection(
+            os.getenv("AZURE_ONE_KEY"),
+            "mistral-medium-3.5:latest",
+            "Azure",
+            {"END_POINT": os.getenv("AZURE_ONE_ENDPOINT")},
+        ),
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
+        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.6-luna", "OpenAI", {}),
+        LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4", "OpenAI", {}),
+        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.1-pro-preview", {}),
+        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.5-flash", {}),
     ]
 
     for connection in connections:
