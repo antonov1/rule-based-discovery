@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 import networkx as nx
 import pandas as pd
@@ -23,7 +23,7 @@ class ConcurrentCut(BaseCut):
         self.dfg = dfg
 
     @staticmethod
-    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> Set[AbstractRule]:
         unsat_rules = []
         for rule in rules:
             if isinstance(rule, (InitializationRule, EndRule)):
@@ -51,7 +51,7 @@ class ConcurrentCut(BaseCut):
                     #    f"Rule {rule} is not satisfied by the concurrent cut with groups {groups}"
                     # )
                     unsat_rules.append(rule)
-        return unsat_rules
+        return set(unsat_rules)
 
     def discover(self) -> List[set]:
         # The workflow looks like this

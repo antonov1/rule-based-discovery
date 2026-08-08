@@ -1,5 +1,5 @@
 from itertools import product
-from typing import List
+from typing import List, Set
 
 import networkx as nx
 import pandas as pd
@@ -27,7 +27,7 @@ class SequenceCut(BaseCut):
         self.dfg = dfg
 
     @staticmethod
-    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> Set[AbstractRule]:
         unsat_rules = []
         for rule in rules:
             if isinstance(rule, InitializationRule):
@@ -113,7 +113,7 @@ class SequenceCut(BaseCut):
                     and group_a_idx < group_b_idx
                 ):
                     unsat_rules.append(rule)
-        return unsat_rules
+        return set(unsat_rules)
 
     def __construct_transitive_successors_and_predecessors(
         self, activities: set, dfg: nx.DiGraph

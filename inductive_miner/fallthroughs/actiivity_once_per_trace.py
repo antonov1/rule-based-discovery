@@ -1,10 +1,9 @@
-from typing import Callable, List
+from typing import List, Optional
 
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
-from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism, RepairVariant
-from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from inductive_miner.im_utils import Decomposition
+from pm4py.objects.process_tree.obj import Operator
 from rules import AbstractRule, ExistenceRule
 
 
@@ -50,13 +49,11 @@ def project(log: List[List[str]], candidate: str) -> List[List[str]]:
 
 
 def apply(
-    im_function: Callable,
     log: List[List[str]],
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
-    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
-):
+) -> Optional[Decomposition]:
     acts = sorted({e for trace in log for e in trace})
     if len(acts) == 1:
         return None
@@ -69,18 +66,8 @@ def apply(
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
+            return unsat_rules
 
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
-    # Concurrent Cut (Parallel)
-    # print(f"LOG IS: {log}, candidate is: {candidate}")
-    parent = ProcessTree(operator=Operator.PARALLEL)
     proj_rules = (
         ConcurrentCut.project_rules(
             rules,
@@ -89,33 +76,9 @@ def apply(
         if rules
         else None
     )
-    # Get rid of candidates
     projected_logs = project(log, candidate=candidate)
-
-    add_child(
-        parent=parent,
-        child=(
-            im_function(
-                projected_logs[0],
-                proj_rules[0],
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
-            if proj_rules
-            else im_function(projected_logs[0])
-        ),
+    return Decomposition(
+        operator=Operator.PARALLEL,
+        sublogs=projected_logs,
+        projected_rules=proj_rules,
     )
-    add_child(
-        parent=parent,
-        child=(
-            im_function(
-                projected_logs[1],
-                proj_rules[1],
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
-            if proj_rules
-            else im_function(projected_logs[1])
-        ),
-    )
-    return parent

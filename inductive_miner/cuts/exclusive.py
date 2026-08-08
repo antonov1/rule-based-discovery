@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 import networkx as nx
 import pandas as pd
@@ -24,7 +24,7 @@ class ExclusiveChoiceCut(BaseCut):
         self.dfg = dfg
 
     @staticmethod
-    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> Set[AbstractRule]:
         unsat_rules = []
         for rule in rules:
             if isinstance(rule, (InitializationRule, ExistenceRule, EndRule)):
@@ -45,7 +45,7 @@ class ExclusiveChoiceCut(BaseCut):
                 )
                 if group_a is not None and group_b is not None and group_a != group_b:
                     unsat_rules.append(rule)
-        return unsat_rules
+        return set(unsat_rules)
 
     def discover(self) -> List[set]:
         # To discover partitions of the graph where no direct follows relations exist between partitions

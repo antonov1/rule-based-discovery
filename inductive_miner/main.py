@@ -1,36 +1,28 @@
-from typing import List, Set, Union
+from typing import Callable, List, Union
 
 import pandas as pd
 import pm4py
-from inductive_miner.cuts.concurrent_cut import BinaryConcurrentCut, ConcurrentCut
-from inductive_miner.cuts.exclusive import BinaryExclusiveChoiceCut, ExclusiveChoiceCut
-from inductive_miner.cuts.loop_cut import BinaryLoopCut, LoopCut
-from inductive_miner.cuts.strict_sequence import (
-    BinaryStrictSequenceCut,
-    StrictSequenceCut,
-)
+from inductive_miner.cuts.concurrent_cut import ConcurrentCut
+from inductive_miner.cuts.exclusive import ExclusiveChoiceCut
+from inductive_miner.cuts.loop_cut import LoopCut
+from inductive_miner.cuts.strict_sequence import StrictSequenceCut
 from inductive_miner.fallthroughs import (
     activity_concur,
     activity_once,
     empty,
+    empty,
     flower_model,
     n_tau,
     po,
-    rule_seq,
     s_tau,
     xor,
 )
-from inductive_miner.im_utils import (
-    add_child,
-    base_cases,
-    intersection_of_logs,
-    repair_mechanism,
-)
+from inductive_miner.im_utils import add_child, base_cases, repair_mechanism
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules.rule_utils import preprocess_rule_set, product_automaton
+from rules.rule_utils import preprocess_rule_set
 from rules import *
 
-from inductive_miner.im_utils import normalize_tree, RepairVariant
+from inductive_miner.im_utils import Decomposition, normalize_tree, RepairVariant
 from metrics.fitness import fitness_token_based_tree
 from metrics.precision import precision_token_based_tree
 from metrics.rule_conformance import (
@@ -39,51 +31,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
-
-
-def handle_empty_traces(
-    log,
-    im_function,
-    rules: List[AbstractRule] = None,
-    repair_mode=RepairVariant.TraceLevel,
-    noise_threshold=0.0,
-):
-    if any(len(trace) == 0 for trace in log):
-        # Remove empty traces from the log
-        non_empty_log = [t for t in log if len(t) > 0]
-
-        if rules:
-            act_set = set([act for trace in log for act in trace])
-            groups = [set(), act_set]
-            unsat_rules = ExclusiveChoiceCut.check_rules(rules, groups)
-            if unsat_rules:
-                return im_function(
-                    non_empty_log,
-                    rules,
-                    noise_threshold=noise_threshold,
-                    repair_mode=repair_mode,
-                )
-        if not non_empty_log:
-            return ProcessTree()  # Pure Tau
-
-        # Recursively mine the non-empty part and wrap in XOR
-
-        subtree = (
-            im_function(
-                non_empty_log,
-                rules,
-                noise_threshold=noise_threshold,
-                repair_mode=repair_mode,
-            )
-            if rules is not None
-            else im_function(non_empty_log)
-        )
-        root = ProcessTree(operator=Operator.XOR)
-        add_child(root, ProcessTree())  # Add Tau
-        add_child(root, subtree)  # Add the actual process
-        return root
-    return None
+ENABLE_PRINTS = True
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -113,173 +61,6 @@ def traces_to_log(
     return df
 
 
-def apply_BIM_with_rules(
-    log: Union[pd.DataFrame, List],
-    rules: List[AbstractRule] = [],
-    noise_threshold: float = 0.0,
-    activity_key="concept:name",
-    case_key="case:concept:name",
-):
-    if isinstance(log, pd.DataFrame):
-        log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
-
-    act_in_log = set([e for trace in log for e in trace])
-
-    if rules:
-        intersection_logs = [r.apply(log) for r in rules]
-        intersection_logs = intersection_of_logs(intersection_logs)
-        if len(intersection_logs) == 0:
-            act_in_log = set([e for trace in log for e in trace])
-
-            raise Exception(
-                f"The support of the rules {rules} is 0. Activities are {act_in_log}."
-            )
-    process_tree = ProcessTree()
-
-    dfg = DirectlyFollowsGraph(log)
-    dfg_graph = dfg.graph
-    dfg_graph = (
-        DirectlyFollowsGraph.filter(threshold=noise_threshold, dfg=dfg_graph)
-        if noise_threshold > 0
-        else dfg_graph
-    )
-
-    # Try to apply the cuts in order of precedence
-    cut_classes = [
-        BinaryExclusiveChoiceCut,
-        BinaryStrictSequenceCut,
-        BinaryConcurrentCut,
-        BinaryLoopCut,
-    ]
-    ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
-    # Check if the log has exactly one activity or empty traces
-    empty_traces = handle_empty_traces(log, apply_IM_with_rules, rules=rules)
-    # print(f"Log is: {log}")
-    if empty_traces is not None:
-        return empty_traces
-
-    if len(dfg_graph.nodes) <= 1:
-        # print(f"Applying base case to log {log}")
-        process_tree = base_cases(
-            log,
-            process_tree,
-            dfg_graph,
-            apply_IM_with_rules,
-            rules,
-        )
-        if ENABLE_PRINTS:
-            print(f"BASE CASE TREE {process_tree}")
-
-        return process_tree
-    log_act_set = set([act for trace in log for act in trace])
-    for cut_class, op in zip(cut_classes, ops):
-        cut = cut_class(dfg_graph)
-        groups = cut.discover()
-        if ENABLE_PRINTS:
-            print(f"Cut {op} discovered with groups {groups}")
-        if groups is not None:
-            if ENABLE_PRINTS:
-                print(f"Groups are: {groups}")
-            unsat_rules = cut.check_rules(rules, groups)
-            if unsat_rules:
-
-                repaired_log = repair_mechanism(
-                    log, unsat_rules, apply_BIM_with_rules, rules
-                )
-                if ENABLE_PRINTS:
-                    print(
-                        f"Unsat rules for {op} with groups {groups}: {[str(r) for r in unsat_rules]}, Repaired via: {repaired_log}"
-                    )
-
-                if repaired_log:
-                    return repaired_log
-                else:
-                    continue
-
-            process_tree = ProcessTree(operator=op)
-            sublogs = cut.project(
-                log, groups, activity_key=activity_key, case_key=case_key
-            )
-            projected_rules = cut.project_rules(rules, groups)
-            for i in range(len(sublogs)):
-                # assert_rules_supported(
-                #    "In rule refinement:", sublogs[i], projected_rules[i]
-                # )
-
-                child_node = apply_BIM_with_rules(
-                    sublogs[i],
-                    projected_rules[i],
-                    activity_key=activity_key,
-                    case_key=case_key,
-                )
-                add_child(process_tree, child_node)
-            if ENABLE_PRINTS:
-                print("***")
-                print("ACTS:", sorted(log_act_set))
-                print("RULES:", [str(r) for r in rules])
-                print("OP:", op)
-                print("GROUPS:", [sorted(g) for g in groups])
-                print(
-                    "PROJECTED RULES:", [proj_group for proj_group in projected_rules]
-                )
-                print(
-                    "SUBLOGS:",
-                    [
-                        {
-                            "acts": sorted(set(a for t in sl for a in t)),
-                            "n_traces": len(sl),
-                            "n_empty": sum(1 for t in sl if len(t) == 0),
-                        }
-                        for sl in sublogs
-                    ],
-                )
-                print("SOURCE:", "cut")
-                print("***")
-            return process_tree
-    start_activities = dfg.start_activities
-    end_activities = dfg.end_activities
-    order_of_fall_throughs = [
-        empty,
-        activity_once,
-        activity_concur,
-        s_tau,
-        n_tau,
-        flower_model,
-        rule_seq,
-    ]
-    name_of_fall_throughs = [
-        "empty",
-        "once",
-        "concur",
-        "s_tau",
-        "tau",
-        "flower",
-        "rseq",
-    ]
-    for idx, fallthrough in enumerate(order_of_fall_throughs):
-        # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
-        res = fallthrough(
-            dfg=dfg.graph,
-            start_activities=start_activities,
-            end_activities=end_activities,
-            log=log,
-            cut_order=cut_classes,
-            im_function=apply_BIM_with_rules,
-            rules=rules,
-        )
-        if res:
-            if ENABLE_PRINTS:
-                print("---")
-                print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
-                print("result", res)
-
-                print("---")
-
-            res.parent = process_tree.parent
-            return res
-    return ProcessTree()
-
-
 def filter_log_by_rules(log, rules):
     filtered_log = log
 
@@ -289,22 +70,44 @@ def filter_log_by_rules(log, rules):
     return filtered_log
 
 
-def __check_satisfiability(alphabet: Set[str], rules: List[AbstractRule]):
-    # extend the alphabet with the rules' activities
-    for r in rules:
-        # if it has attributes activity_a and activity_b take them
-        activity_a = getattr(r, "activity_a", None)
-        activity_b = getattr(r, "activity_b", None)
-        target = getattr(r, "target_activity", None)
+def mine_decomposition(
+    decomposition: Decomposition,
+    im_function: Callable,
+    repair_mode=None,
+    noise_threshold=None,
+):
+    parent = ProcessTree(operator=decomposition.operator)
 
-        if activity_a is not None and activity_b is not None:
-            alphabet.add(activity_a)
-            alphabet.add(activity_b)
-        elif target is not None:
-            alphabet.add(target)
-    automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
-    product = product_automaton(rules, alphabet, automata_by_rule)
-    return len(product.final_states) > 0
+    for i, sublog in enumerate(decomposition.sublogs):
+        subrules = (
+            decomposition.projected_rules[i]
+            if decomposition.projected_rules is not None
+            else None
+        )
+
+        kwargs = {}
+
+        if repair_mode is not None:
+            kwargs["repair_mode"] = repair_mode
+
+        if noise_threshold is not None:
+            kwargs["noise_threshold"] = noise_threshold
+
+        if subrules is not None:
+            child = im_function(
+                sublog,
+                subrules,
+                **kwargs,
+            )
+        else:
+            child = im_function(
+                sublog,
+                **kwargs,
+            )
+
+        add_child(parent, child)
+
+    return parent
 
 
 def preprocess_and_apply_IM_with_rules(
@@ -331,18 +134,11 @@ def apply_IM_with_rules(
     repair_mode=RepairVariant.EventLevel,
     noise_threshold: float = 0,
 ):
-    set(e for trace in log for e in trace)
-    # print(f"Rules are: {rules}")
-    # print(f"Log is: {log}")
-    # First, we can apply the rules to filter the log
     if isinstance(log, pd.DataFrame):
-        # transform it to a list of traces
         log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
 
-    # Check if the support of rule combos is bigger than 0, if not, raise Exception
-    # if not __check_satisfiability(alphabet, rules):
-    #    raise Exception(f"The set of rules {rules} is unsatisfiable. Activities are {alphabet}.")
     process_tree = ProcessTree()
+    rules = rules or []
 
     dfg = DirectlyFollowsGraph(log)
     dfg_graph = dfg.graph
@@ -351,117 +147,115 @@ def apply_IM_with_rules(
         if noise_threshold > 0
         else dfg_graph
     )
-    # show them to compare
-
-    # Try to apply the cuts in order of precedence
     cut_classes = [ExclusiveChoiceCut, StrictSequenceCut, ConcurrentCut, LoopCut]
     ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
-    # Check if the log has exactly one activity or empty traces
 
+    applicable_but_rejected_cuts = []
+    # --- EMPTY TRACES --- #
     empty_traces = (
-        handle_empty_traces(
-            log,
-            apply_IM_with_rules,
-            rules=rules,
+        empty(log=log, rules=rules) if "ArtificialNoneNode" in dfg_graph else None
+    )
+    if isinstance(empty_traces, set):
+        applicable_but_rejected_cuts.append(
+            {
+                "cut": empty,
+                "unsat_rules": empty_traces,
+            }
+        )
+    elif isinstance(empty_traces, Decomposition):
+        return mine_decomposition(
+            decomposition=empty_traces,
+            im_function=apply_IM_with_rules,
             repair_mode=repair_mode,
             noise_threshold=noise_threshold,
         )
-        if "ArtificialNoneNode" in dfg_graph
-        else None
-    )
+    # --- END OF EMPTY TRACES --- #
 
-    if empty_traces is not None:
-        return empty_traces
+    # --- BASE CASE --- #
 
     if len(dfg_graph.nodes) <= 1 or (
         len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in dfg_graph
     ):
-        # print(f"Applying base case to log {log}")
         process_tree = base_cases(
-            log,
-            process_tree,
-            dfg_graph,
-            apply_IM_with_rules,
-            rules,
-            repair_mode=repair_mode,
-            noise_threshold=noise_threshold,
+            log=log,
+            process_tree=process_tree,
+            dfg_graph=dfg_graph,
+            rules=rules,
         )
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
 
-        return process_tree
-    log_act_set = set([act for trace in log for act in trace])
+        if isinstance(process_tree, set):
+            applicable_but_rejected_cuts.append(
+                {
+                    "cut": base_cases,
+                    "unsat_rules": process_tree,
+                }
+            )
+        else:
+            return process_tree
+    # --- END OF BASE CASE --- #
+
     for cut_class, op in zip(cut_classes, ops):
         cut = cut_class(dfg_graph)
         groups = cut.discover()
         if ENABLE_PRINTS:
             print(f"Cut {op} discovered with groups {groups}")
+            print(f"Groups are: {groups}")
+
         if groups is not None:
-            if ENABLE_PRINTS:
-                print(f"Groups are: {groups}")
             unsat_rules = cut.check_rules(rules, groups)
             if unsat_rules:
-
-                repaired_log = repair_mechanism(
-                    log,
-                    unsat_rules,
-                    apply_IM_with_rules,
-                    rules,
-                    repair_mode,
-                    noise_threshold=noise_threshold,
+                applicable_but_rejected_cuts.append(
+                    {
+                        "cut": cut_class,
+                        "unsat_rules": unsat_rules,
+                    }
+                )
+                continue
+            else:
+                sublogs = cut.project(log, groups)
+                projected_rules = cut.project_rules(rules, groups) if rules else None
+                decomposition = Decomposition(
+                    operator=op, sublogs=sublogs, projected_rules=projected_rules
                 )
                 if ENABLE_PRINTS:
+                    alphabet = set([act for trace in log for act in trace])
+                    print("***")
+                    print("ACTS:", sorted(alphabet))
+                    print("RULES:", [str(r) for r in rules])
+                    print("OP:", op)
+                    print("GROUPS:", [sorted(g) for g in groups])
                     print(
-                        f"Unsat rules for {op} with groups {groups}: {[str(r) for r in unsat_rules]}, Repaired via: {repaired_log}"
+                        "PROJECTED RULES:",
+                        (
+                            [proj_group for proj_group in projected_rules]
+                            if projected_rules
+                            else None
+                        ),
                     )
+                    print(
+                        "SUBLOGS:",
+                        [
+                            {
+                                "acts": sorted(set(a for t in sl for a in t)),
+                                "n_traces": len(sl),
+                                "n_empty": sum(1 for t in sl if len(t) == 0),
+                            }
+                            for sl in sublogs
+                        ],
+                    )
+                    print("SOURCE:", "cut")
+                    print("***")
 
-                if repaired_log:
-                    return repaired_log
-                else:
-                    continue
-
-            process_tree = ProcessTree(operator=op)
-            sublogs = cut.project(
-                log, groups, activity_key=activity_key, case_key=case_key
-            )
-            projected_rules = cut.project_rules(rules, groups)
-            for i in range(len(sublogs)):
-                # assert_rules_supported(
-                #    "In rule refinement:", sublogs[i], projected_rules[i]
-                # )
-
-                child_node = apply_IM_with_rules(
-                    sublogs[i],
-                    projected_rules[i],
-                    activity_key=activity_key,
-                    case_key=case_key,
+                return mine_decomposition(
+                    decomposition=decomposition,
+                    im_function=apply_IM_with_rules,
                     repair_mode=repair_mode,
                     noise_threshold=noise_threshold,
                 )
-                add_child(process_tree, child_node)
-            if ENABLE_PRINTS:
-                print("***")
-                print("ACTS:", sorted(log_act_set))
-                print("RULES:", [str(r) for r in rules])
-                print("OP:", op)
-                print("GROUPS:", [sorted(g) for g in groups])
-                print(
-                    "PROJECTED RULES:", [proj_group for proj_group in projected_rules]
-                )
-                print(
-                    "SUBLOGS:",
-                    [
-                        {
-                            "acts": sorted(set(a for t in sl for a in t)),
-                            "n_traces": len(sl),
-                            "n_empty": sum(1 for t in sl if len(t) == 0),
-                        }
-                        for sl in sublogs
-                    ],
-                )
-                print("SOURCE:", "cut")
-                print("***")
-            return process_tree
+    # --- DATA-BASED FALL-THROUGH --- #
+    print("BEFORE FALLTHROUGHS:", [str(r) for r in rules])
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
     order_of_fall_throughs = [
@@ -469,19 +263,73 @@ def apply_IM_with_rules(
         activity_concur,
         s_tau,
         n_tau,
-        flower_model,
-        po,
-        xor,
     ]
     name_of_fall_throughs = [
         "once",
         "concur",
         "s_tau",
         "tau",
-        "flower",
-        "po",
-        "xor",
     ]
+    for idx, fallthrough in enumerate(order_of_fall_throughs):
+        # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
+        result = fallthrough(
+            dfg=dfg.graph,
+            start_activities=start_activities,
+            end_activities=end_activities,
+            log=log,
+            cut_order=cut_classes,
+            rules=rules,
+        )
+        if isinstance(result, set):
+            applicable_but_rejected_cuts.append(
+                {
+                    "cut": fallthrough,
+                    "unsat_rules": result,
+                }
+            )
+        elif isinstance(result, Decomposition):
+            if ENABLE_PRINTS:
+                print("---")
+                print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
+                print("result", result)
+                print("---")
+
+            return mine_decomposition(
+                decomposition=result,
+                im_function=apply_IM_with_rules,
+                repair_mode=repair_mode,
+                noise_threshold=noise_threshold,
+            )
+    # --- END OF DATA-BASED FALL-THROUGHS --- #
+    # Check if any applicable but rejected cuts exist, if so, return the first one
+    # --- ATTEMPT REPAIR --- #
+    if applicable_but_rejected_cuts:
+        # trigger the repair mechanism
+        first_rejected_op, unsat_rules = (
+            applicable_but_rejected_cuts[0]["cut"],
+            applicable_but_rejected_cuts[0]["unsat_rules"],
+        )
+        repair = repair_mechanism(
+            log,
+            unsat_rules,
+            original_rules=rules,
+            repair_mode=repair_mode,
+        )
+        if repair is not None:
+            print("BEFORE REPAIR:", [str(r) for r in rules])
+            print("UNSAT TRIGGER:", [str(r) for r in unsat_rules])
+            repaired_log, new_rules = repair
+            print("AFTER REPAIR:", [str(r) for r in new_rules])
+            return apply_IM_with_rules(
+                log=repaired_log,
+                rules=new_rules,
+                repair_mode=repair_mode,
+                noise_threshold=noise_threshold,
+            )
+
+    # --- RULE-BASED FALL-THROUGH --- #
+    name_of_fall_throughs = ["po", "xor"]
+    order_of_fall_throughs = [po, xor]
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
         res = fallthrough(
@@ -505,8 +353,14 @@ def apply_IM_with_rules(
 
             res.parent = process_tree.parent
             return res
-    print(f"We have reached the final fall-through: {log[:10]}, rules are: {rules}")
-    return ProcessTree()
+
+    # --- FLOWER MODEL FALL-THROUGH --- #
+    return mine_decomposition(
+        decomposition=flower_model(log, rules=rules),
+        im_function=apply_IM_with_rules,
+        repair_mode=repair_mode,
+        noise_threshold=noise_threshold,
+    )
 
 
 def apply_IM(
@@ -514,180 +368,165 @@ def apply_IM(
     activity_key="concept:name",
     case_key="case:concept:name",
 ):
-
     if isinstance(log, pd.DataFrame):
-        # transform it to a list of traces
-        log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
+        log = preprocess_log(
+            log,
+            activity_key=activity_key,
+            case_key=case_key,
+        )
 
     process_tree = ProcessTree()
 
     dfg = DirectlyFollowsGraph(log)
     dfg_graph = dfg.graph
 
-    log_act_set = set([act for trace in log for act in trace])
-    # Try to apply the cuts in order of precedence
-    cut_classes = [ExclusiveChoiceCut, StrictSequenceCut, ConcurrentCut, LoopCut]
-    ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
-    # Check if the log has exactly one activity or empty traces
-    empty_traces = handle_empty_traces(log, apply_IM)
-    if empty_traces is not None:
-        return empty_traces
+    cut_classes = [
+        ExclusiveChoiceCut,
+        StrictSequenceCut,
+        ConcurrentCut,
+        LoopCut,
+    ]
 
-    if len(dfg_graph.nodes) <= 1:
-        # print(f"Applying base case to log {log}")
-        process_tree = base_cases(
-            log, process_tree, dfg_graph, activity_key=activity_key, case_key=case_key
+    ops = [
+        Operator.XOR,
+        Operator.SEQUENCE,
+        Operator.PARALLEL,
+        Operator.LOOP,
+    ]
+
+    # ------------------------------------------------------------
+    # EMPTY TRACES
+    # ------------------------------------------------------------
+
+    empty_result = (
+        empty(
+            log=log,
+            rules=[],
         )
+        if "ArtificialNoneNode" in dfg_graph
+        else None
+    )
+
+    if isinstance(empty_result, Decomposition):
+        return mine_decomposition(
+            decomposition=empty_result,
+            im_function=apply_IM,
+        )
+
+    # ------------------------------------------------------------
+    # BASE CASES
+    # ------------------------------------------------------------
+
+    if len(dfg_graph.nodes) <= 1 or (
+        len(dfg_graph.nodes) == 2 and "ArtificialNoneNode" in dfg_graph
+    ):
+        process_tree = base_cases(
+            log=log,
+            process_tree=process_tree,
+            dfg_graph=dfg_graph,
+            rules=[],
+        )
+
         if ENABLE_PRINTS:
             print(f"BASE CASE TREE {process_tree}")
 
         return process_tree
 
+    # ------------------------------------------------------------
+    # CUTS
+    # ------------------------------------------------------------
+
     for cut_class, op in zip(cut_classes, ops):
         cut = cut_class(dfg_graph)
         groups = cut.discover()
-        if groups is not None:
-            process_tree = ProcessTree(operator=op)
-            sublogs = cut.project(
-                log, groups, activity_key=activity_key, case_key=case_key
+
+        if ENABLE_PRINTS:
+            print(f"Cut {op} discovered with groups {groups}")
+            print(f"Groups are: {groups}")
+
+        if groups is None:
+            continue
+
+        sublogs = cut.project(
+            log,
+            groups,
+            activity_key=activity_key,
+            case_key=case_key,
+        )
+
+        decomposition = Decomposition(
+            operator=op,
+            sublogs=sublogs,
+            projected_rules=None,
+        )
+
+        if ENABLE_PRINTS:
+            alphabet = {activity for trace in log for activity in trace}
+
+            print("***")
+            print("ACTS:", sorted(alphabet))
+            print("OP:", op)
+            print("GROUPS:", [sorted(group) for group in groups])
+            print(
+                "SUBLOGS:",
+                [
+                    {
+                        "acts": sorted(
+                            {activity for trace in sublog for activity in trace}
+                        ),
+                        "n_traces": len(sublog),
+                        "n_empty": sum(1 for trace in sublog if not trace),
+                    }
+                    for sublog in sublogs
+                ],
             )
-            for sublog in sublogs:
-                child_node = apply_IM(
-                    sublog, activity_key=activity_key, case_key=case_key
-                )
-                add_child(process_tree, child_node)
-            if ENABLE_PRINTS:
-                print("***")
-                print("ACTS:", sorted(log_act_set))
-                print("OP:", op)
-                print("GROUPS:", [sorted(g) for g in groups])
-                print(
-                    "SUBLOGS:",
-                    [
-                        {
-                            "acts": sorted(set(a for t in sl for a in t)),
-                            "n_traces": len(sl),
-                            "n_empty": sum(1 for t in sl if len(t) == 0),
-                        }
-                        for sl in sublogs
-                    ],
-                )
-                print("SOURCE:", "cut")
-                print("***")
-            return process_tree
-    start_activities = dfg.start_activities
-    end_activities = dfg.end_activities
-    order_of_fall_throughs = [
-        empty,
-        activity_once,
-        activity_concur,
-        s_tau,
-        n_tau,
-        flower_model,
-    ]
-    name_of_fall_throughs = ["empty", "once", "concur", "s_tau", "tau", "flower"]
-    for idx, fallthrough in enumerate(order_of_fall_throughs):
-        # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
-        res = fallthrough(
-            dfg=dfg.graph,
-            start_activities=start_activities,
-            end_activities=end_activities,
-            log=log,
-            cut_order=cut_classes,
+            print("SOURCE:", "cut")
+            print("***")
+
+        return mine_decomposition(
+            decomposition=decomposition,
             im_function=apply_IM,
         )
-        if res:
-            if ENABLE_PRINTS:
-                print("---")
-                print("ACTS:", sorted(log_act_set))
-                print("FALLTHROUGH:", name_of_fall_throughs[idx])
-                print("---")
 
-            res.parent = process_tree.parent
-            return res
-    return ProcessTree()
+    # ------------------------------------------------------------
+    # FALL-THROUGHS
+    # ------------------------------------------------------------
 
-
-def apply_binary_IM(
-    log: Union[pd.DataFrame, List],
-    activity_key="concept:name",
-    case_key="case:concept:name",
-):
-    if isinstance(log, pd.DataFrame):
-        # transform it to a list of traces
-        log = preprocess_log(log, activity_key=activity_key, case_key=case_key)
-    process_tree = ProcessTree()
-
-    dfg = DirectlyFollowsGraph(log)
-    dfg_graph = dfg.graph
-
-    empty_traces = handle_empty_traces(log, apply_IM)
-    if empty_traces is not None:
-        return empty_traces
-
-    if len(dfg_graph.nodes) <= 1:
-        parent = process_tree.parent
-        process_tree = base_cases(
-            log, process_tree, dfg_graph, activity_key=activity_key, case_key=case_key
-        )
-
-        process_tree.parent = parent
-        return process_tree
-
-    # Try to apply the cuts in order of precedence
-
-    cut_classes = [
-        BinaryExclusiveChoiceCut,
-        BinaryStrictSequenceCut,
-        BinaryConcurrentCut,
-        BinaryLoopCut,
-    ]
-    ops = [Operator.XOR, Operator.SEQUENCE, Operator.PARALLEL, Operator.LOOP]
-
-    for cut_class, op in zip(cut_classes, ops):
-        cut = cut_class(dfg_graph)
-        groups = cut.discover()
-        if groups is not None:
-            parent = process_tree.parent
-            process_tree = ProcessTree(operator=op)
-            process_tree.parent = parent
-            sublogs = cut.project(
-                log, groups, activity_key=activity_key, case_key=case_key
-            )
-
-            for i in range(len(sublogs)):
-                child_node = apply_binary_IM(
-                    sublogs[i],
-                    activity_key=activity_key,
-                    case_key=case_key,
-                )
-                add_child(process_tree, child_node)
-
-            return process_tree
-    # Now, we can apply the fall-throughs because no cut was detected
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
-    order_of_fall_throughs = [
-        empty,
-        activity_once,
-        activity_concur,
-        s_tau,
-        n_tau,
-        flower_model,
+
+    fallthroughs = [
+        ("once", activity_once),
+        ("concur", activity_concur),
+        ("s_tau", s_tau),
+        ("tau", n_tau),
+        ("flower", flower_model),
     ]
-    for _, fallthrough in enumerate(order_of_fall_throughs):
-        res = fallthrough(
+
+    for name, fallthrough in fallthroughs:
+        result = fallthrough(
             dfg=dfg.graph,
             start_activities=start_activities,
             end_activities=end_activities,
             log=log,
             cut_order=cut_classes,
-            im_function=apply_binary_IM,
-            binary=True,
+            rules=[],
         )
-        if res:
-            res.parent = process_tree.parent
-            return res
+
+        if not isinstance(result, Decomposition):
+            continue
+
+        if ENABLE_PRINTS:
+            print("---")
+            print("APPLIED FALLTHROUGH:", name)
+            print("result", result)
+            print("---")
+
+        return mine_decomposition(
+            decomposition=result,
+            im_function=apply_IM,
+        )
+
     return ProcessTree()
 
 
@@ -712,14 +551,15 @@ if __name__ == "__main__":
     log_org = log.copy()
     log = preprocess_log(log)
 
-    rules, log = preprocess_rule_set(rules, log)
+    # rules, log = preprocess_rule_set(rules, log)
+    print(f"Rules are: {rules}")
     print(f"Rules are: {rules}")
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EventLevel, noise_threshold=0
+        log, rules=rules, repair_mode=RepairVariant.TraceLevel, noise_threshold=0
     )
+    model = normalize_tree(model)
     pm4py.view_process_tree(model)  # Visualize the process tree
-    print(normalize_tree(model))
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
     print(

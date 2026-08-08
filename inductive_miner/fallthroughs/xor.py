@@ -6,9 +6,32 @@ from inductive_miner.cuts.exclusive import ExclusiveChoiceCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child, build_signed_cdg
 from inductive_miner.im_utils import RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule, NotCoExistenceRule, ResponseRule
+from rules import AbstractRule, ExistenceRule, NotCoExistenceRule, ResponseRule
 
 ARTIFICIAL_NONE_NODE = "ArtificialNoneNode"
+
+
+def forced_by_existence(
+    rules: List[AbstractRule],
+) -> Optional[str]:
+    existing = {
+        rule.target_activity for rule in rules if isinstance(rule, ExistenceRule)
+    }
+
+    for rule in rules:
+        if not isinstance(rule, NotCoExistenceRule):
+            continue
+
+        a = rule.activity_a
+        b = rule.activity_b
+
+        if a in existing and b not in existing:
+            return a
+
+        if b in existing and a not in existing:
+            return b
+
+    return None
 
 
 def detect_groups(
@@ -85,6 +108,30 @@ def apply(
     if not any(isinstance(r, NotCoExistenceRule) for r in rules or []):
         # inapplicable
         return None
+    # --- EXISTENCE AND NOTCOEXISTENCE RULES CHECK ---
+    forced_activity = forced_by_existence(rules)
+
+    if forced_activity is not None:
+        projected_log = [
+            [event for event in trace if event == forced_activity] for trace in log
+        ]
+
+        projected_rules = [
+            rule
+            for rule in rules
+            if (
+                isinstance(rule, ExistenceRule)
+                and rule.target_activity == forced_activity
+            )
+        ]
+
+        return im_function(
+            projected_log,
+            projected_rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
+        )
+
     positive_graph, negative_graph = build_signed_cdg(rules, alphabet)
     groups = detect_groups(positive_graph, negative_graph)
     if len(groups) <= 1:

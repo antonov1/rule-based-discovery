@@ -23,6 +23,12 @@ class AbstractRule(ABC):
         self.sup = support
         self.conf = confidence
 
+    def __eq__(self, other):
+        return type(self) == type(other) and self.args == other.args
+
+    def __hash__(self):
+        return hash((type(self), tuple(self.args)))
+
     @property
     def name(self):
         return self.__class__.__name__.replace("Rule", "")

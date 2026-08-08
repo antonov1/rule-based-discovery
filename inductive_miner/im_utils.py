@@ -1,8 +1,11 @@
 import time
 from collections import Counter
+from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, List
+from typing import List, Optional
 
+import networkx as nx
+from automata.fa.dfa import DFA
 from inductive_miner.cuts import LoopCut
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import (
@@ -13,6 +16,7 @@ from rules import (
     NotCoExistenceRule,
     NotSuccessionRule,
 )
+from rules.rule_utils import product_automaton
 
 
 class RepairVariant(Enum):
@@ -22,7 +26,18 @@ class RepairVariant(Enum):
     Naive = "naive"
 
 
+@dataclass
+class Decomposition:
+    operator: Operator
+    sublogs: List[List[List[str]]]
+    projected_rules: Optional[List[List[AbstractRule]]] = None
+
+
 REPAIR_VARIANT = RepairVariant.EditDistance
+
+
+def log_signature(log):
+    return Counter(tuple(trace) for trace in log)
 
 
 def acts_of(log):
@@ -146,7 +161,6 @@ def base_cases(
     log: List[List[str]],
     process_tree: ProcessTree,
     dfg_graph,
-    im_function: Callable = None,
     rules: List[AbstractRule] = None,
     **kwargs,
 ):
@@ -169,24 +183,7 @@ def base_cases(
         ]
 
         if unsat_rules:
-            repaired_tree = repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=kwargs.get(
-                    "repair_mode",
-                    REPAIR_VARIANT,
-                ),
-                noise_threshold=kwargs.get(
-                    "noise_threshold",
-                    0.0,
-                ),
-            )
-
-            if repaired_tree is not None:
-                return repaired_tree
-
+            return unsat_rules
         return process_tree
 
     if len(nodes) == 1 or (len(nodes) == 2 and "ArtificialNoneNode" in nodes):
@@ -194,7 +191,6 @@ def base_cases(
             log,
             dfg_graph,
             nodes,
-            im_function,
             rules,
             **kwargs,
         )
@@ -208,9 +204,7 @@ def base_cases(
     )
 
 
-def _build_single_activity_tree(
-    log, dfg_graph, nodes, im_function, rules, **kwargs
-) -> ProcessTree:
+def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> ProcessTree:
     nodes = nodes - {"ArtificialNoneNode"}
     if not nodes:
         return ProcessTree()  # Tau
@@ -225,48 +219,26 @@ def _build_single_activity_tree(
                 if target != activity:
                     unsat_rules.append(r)
         if unsat_rules:
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
+            return unsat_rules
         else:
             return ProcessTree(label=activity)
 
     has_empty_trace = [] in log
-    if has_empty_trace:
-        if rules:
-            group_0 = set()
-            group_1 = set(activity)
-            unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
-            if unsat_rules:
-                return repair_mechanism(
-                    log,
-                    unsat_rules,
-                    im_function,
-                    rules,
-                    repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
-                    noise_threshold=kwargs.get("noise_threshold", 0.0),
-                )
+    if has_empty_trace and rules:
+        group_0 = set()
+        group_1 = set(activity)
+        unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
+        if unsat_rules:
+            return unsat_rules
 
         return _build_loop_tree(do_first=None, redo=activity)
-    if rules:
+    elif rules:
         group_0 = set(activity)
         group_1 = set()
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
 
         if unsat_rules:
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=kwargs.get("repair_mode", REPAIR_VARIANT),
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
+            return unsat_rules
 
     return _build_loop_tree(do_first=activity, redo=None)
 
@@ -328,8 +300,7 @@ def __event_based_log_repair(
     unsat_rules: List[AbstractRule],
 ):
     repaired_log = log
-    for i in range(len(unsat_rules)):
-        rule = unsat_rules[i]
+    for rule in unsat_rules:
         new_log = rule.repair(repaired_log)
         if not new_log:
             return None
@@ -347,17 +318,11 @@ def __event_based_log_repair(
 def event_level_repair(
     log,
     unsat_rules: List[AbstractRule],
-    im_function: Callable,
     original_rules: List[AbstractRule],
-    noise_threshold: float = 0.0,
 ):
     original_event_count = sum(len(trace) for trace in log)
     num_traces_orig = len(log)
     repaired_log = __event_based_log_repair(log, unsat_rules)
-
-    if not repaired_log:
-        # repair failed
-        return None
 
     new_rules = supported_rules(repaired_log, original_rules)
 
@@ -368,62 +333,46 @@ def event_level_repair(
         and len(new_rules) == len(original_rules)
     ):
         return None
-    return im_function(
-        repaired_log,
-        new_rules,
-        repair_mode=RepairVariant.EventLevel,
-        noise_threshold=noise_threshold,
-    )
+    return repaired_log, new_rules
 
 
 def __trace_level_log_repair(
     log,
     unsat_rules: List[AbstractRule],
+    original_rules: List[AbstractRule],
 ):
     intersection = log.copy()
-    for i in range(len(unsat_rules)):
-        rule = unsat_rules[i]
+    for rule in unsat_rules:
         intersection = rule.apply(intersection)
-    return intersection
+    new_rules = supported_rules(intersection, original_rules)
+    return intersection, new_rules
 
 
 def trace_level_repair(
     log,
     unsat_rules: List[AbstractRule],
-    im_function: Callable,
     original_rules: List[AbstractRule],
-    noise_threshold: float = 0.0,
 ):
-    intersection = __trace_level_log_repair(log, unsat_rules)
-    new_rules = supported_rules(intersection, original_rules)
+    intersection, new_rules = __trace_level_log_repair(log, unsat_rules, original_rules)
 
     if (
         len(intersection) == len(log) and len(original_rules) == len(new_rules)
     ) or intersection is None:
         # No progress, continue trying
         return None
-    return im_function(
-        intersection,
-        new_rules,
-        repair_mode=RepairVariant.TraceLevel,
-        noise_threshold=noise_threshold,
-    )
+    return intersection, new_rules
 
 
 def repair_mechanism(
-    log,
+    log: List[List[str]],
     unsat_rules: List[AbstractRule],
-    im_function: Callable,
     original_rules: List[AbstractRule],
     repair_mode: RepairVariant = REPAIR_VARIANT,
-    noise_threshold: float = 0.0,
 ):
     if repair_mode == RepairVariant.EventLevel:
         start = time.perf_counter()
 
-        repair = event_level_repair(
-            log, unsat_rules, im_function, original_rules, noise_threshold
-        )
+        repair = event_level_repair(log, unsat_rules, original_rules)
 
         elapsed = time.perf_counter() - start
 
@@ -433,9 +382,7 @@ def repair_mechanism(
 
     elif repair_mode == RepairVariant.TraceLevel:
         start = time.perf_counter()
-        repair = trace_level_repair(
-            log, unsat_rules, im_function, original_rules, noise_threshold
-        )
+        repair = trace_level_repair(log, unsat_rules, original_rules)
         end = time.perf_counter() - start
         with open("repair_timings_trace_level.txt", "a") as f:
             f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
@@ -443,7 +390,9 @@ def repair_mechanism(
     elif repair_mode == RepairVariant.EditDistance:
         start = time.perf_counter()
         repair = apply_edit_distance_repair(
-            log, original_rules, unsat_rules, im_function, noise_threshold
+            log,
+            original_rules,
+            unsat_rules,
         )
         end = time.perf_counter() - start
         with open("repair_timings_edit_distance.txt", "a") as f:
@@ -454,14 +403,6 @@ def repair_mechanism(
     else:
         raise Exception(f"Unknown repair mode: {repair_mode}")
 
-
-from enum import Enum
-from typing import Callable, List
-
-import networkx as nx
-from automata.fa.dfa import DFA
-from rules.abstract_rule import AbstractRule
-from rules.rule_utils import product_automaton
 
 #### APPROXIMATE REPAIR MECHANISM BASED ON EDIT DISTANCE TO THE PRODUCT AUTOMATON OF THE RULES ####
 
@@ -633,16 +574,10 @@ def repair_trace(trace, automaton: DFA):
     }
 
 
-def log_signature(log):
-    return Counter(tuple(trace) for trace in log)
-
-
 def apply_edit_distance_repair(
     log,
     rules: List[AbstractRule],
     unsat_rules: List[AbstractRule],
-    im_function: Callable,
-    noise_threshold: float = 0.0,
 ):
     # Find the traces that are not accepted by the product automaton
     original_log = [list(trace) for trace in log]
@@ -672,18 +607,11 @@ def apply_edit_distance_repair(
     if log_signature(log) == log_signature(original_log):
         return None
     new_rules = supported_rules(log, rules)
-    return im_function(
-        log,
-        new_rules,
-        repair_mode=RepairVariant.EditDistance,
-        noise_threshold=noise_threshold,
-    )
+    return log, new_rules
 
 
 if __name__ == "__main__":
     from automata.fa.dfa import DFA
-
-    # Example usage
 
     dfa = DFA(
         states={"q0", "q1", "q2"},

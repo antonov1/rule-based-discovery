@@ -1,9 +1,8 @@
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 import networkx as nx
 from inductive_miner.cuts import LoopCut
-from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism, RepairVariant
+from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AbstractRule
 
@@ -33,13 +32,11 @@ def project(
 
 
 def apply(
-    im_function: Callable[[List[List[str]], ProcessTree], ProcessTree],
     log: list[list[str]],
     dfg: nx.DiGraph,
     start_activities: set[str],
     end_activities: set[str],
     rules: List[AbstractRule] = None,
-    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
 ) -> Optional[ProcessTree]:
     acts = list(dfg.nodes)
@@ -49,40 +46,19 @@ def apply(
 
     if rules:
         acts = {act for trace in log for act in trace}
-        unsat_rules = LoopCut.check_rules(rules, [set(), acts])
+        unsat_rules = LoopCut.check_rules(rules, [acts, set()])
         if unsat_rules:
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
-
-    parent = ProcessTree(operator=Operator.LOOP)
+            return unsat_rules
     proj_rules = (
-        LoopCut.project_rules(rules, [set(), {act for trace in log for act in trace}])[
-            1
-        ]
+        LoopCut.project_rules(rules, [{act for trace in log for act in trace}, set()])
         if rules
         else None
     )
     # assert_rules_supported("In STAU (0):", sublog, proj_rules)
 
-    do_child = (
-        im_function(
-            sublog,
-            proj_rules,
-            repair_mode=repair_mode,
-            noise_threshold=kwargs.get("noise_threshold", 0.0),
-        )
-        if proj_rules
-        else im_function(sublog)
+    projections = [sublog, []]
+    return Decomposition(
+        operator=Operator.LOOP,
+        sublogs=projections,
+        projected_rules=proj_rules,
     )
-    redo_child = ProcessTree()
-
-    add_child(parent=parent, child=do_child)
-    add_child(parent=parent, child=redo_child)
-
-    return parent

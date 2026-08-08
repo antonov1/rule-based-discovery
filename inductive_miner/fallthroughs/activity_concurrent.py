@@ -1,9 +1,8 @@
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from inductive_miner.cuts import ConcurrentCut
-from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism, RepairVariant
-from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from inductive_miner.im_utils import Decomposition
+from pm4py.objects.process_tree.obj import Operator
 from rules import AbstractRule
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
@@ -49,13 +48,11 @@ def project(log: list[list[str]], candidate: str) -> list[list[list[str]]]:
 
 
 def apply(
-    im_function: Callable,
     log: List[List[str]],
     cut_order: List[type],
     rules: List[AbstractRule] = None,
-    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
-) -> Optional[ProcessTree]:
+) -> Optional[Decomposition]:
     candidate = detect(log, cut_order=cut_order)
     if candidate is None:
         return None
@@ -64,47 +61,17 @@ def apply(
         acts = {act for trace in log for act in trace} - {candidate}
         unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
         if unsat_rules:
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            )
-
-    # Binary split
+            return unsat_rules
     sublogs = project(log, candidate)
 
-    parent = ProcessTree(operator=Operator.PARALLEL)
-    if rules:
-        group_0 = {act for trace in sublogs[0] for act in trace}
-        group_1 = {act for trace in sublogs[1] for act in trace}
-        proj_rules = ConcurrentCut.project_rules(rules, [group_0, group_1])
-        # assert_rules_supported("In CONCUR (0):", sublogs[0], proj_rules[0])
-        # assert_rules_supported("In CONCUR (1):", sublogs[1], proj_rules[1])
+    group_0 = {act for trace in sublogs[0] for act in trace}
+    group_1 = {act for trace in sublogs[1] for act in trace}
+    proj_rules = (
+        ConcurrentCut.project_rules(rules, [group_0, group_1]) if rules else None
+    )
 
-        add_child(
-            parent,
-            im_function(
-                sublogs[0],
-                proj_rules[0],
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            ),
-        )
-        add_child(
-            parent,
-            im_function(
-                sublogs[1],
-                proj_rules[1],
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
-            ),
-        )
-    else:
-        add_child(parent, im_function(sublogs[0]))
-
-        add_child(parent, im_function(sublogs[1]))
-
-    return parent
+    return Decomposition(
+        operator=Operator.PARALLEL,
+        sublogs=sublogs,
+        projected_rules=proj_rules if rules else None,
+    )
