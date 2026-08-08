@@ -241,6 +241,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             f"Trial {current_idx} failed: {exc}\n" f"{traceback.format_exc()}",
             flush=True,
         )
+        input("...")
         return None
 
 
@@ -549,13 +550,9 @@ def evaluate_dataset(ids: List[str]):
             )
             continue
 
-        except Exception as exc:
-            print(
-                f"Trial {eval_id} failed: {exc}\n" f"{traceback.format_exc()}",
-                flush=True,
-            )
-            continue
-
+        except Exception:
+            traceback.print_exc()
+            raise
         rows.append(
             {
                 "trial": eval_id,
@@ -619,4 +616,4 @@ if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
     original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
     ids = original_dataset["trial"][:200]
-    evaluate_dataset(ids)
+    evaluate_dataset([2])
