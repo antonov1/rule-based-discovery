@@ -31,7 +31,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -273,7 +273,7 @@ def apply_IM_with_rules(
     for idx, fallthrough in enumerate(order_of_fall_throughs):
         # print(f"Trying to apply: {name_of_fall_throughs[idx]}")
         result = fallthrough(
-            dfg=dfg.graph,
+            dfg=dfg_graph,
             start_activities=start_activities,
             end_activities=end_activities,
             log=log,
@@ -354,7 +354,6 @@ def apply_IM_with_rules(
             res.parent = process_tree.parent
             return res
 
-    # --- FLOWER MODEL FALL-THROUGH --- #
     return mine_decomposition(
         decomposition=flower_model(log, rules=rules),
         im_function=apply_IM_with_rules,
@@ -505,7 +504,7 @@ def apply_IM(
 
     for name, fallthrough in fallthroughs:
         result = fallthrough(
-            dfg=dfg.graph,
+            dfg=dfg_graph,
             start_activities=start_activities,
             end_activities=end_activities,
             log=log,
@@ -556,7 +555,7 @@ if __name__ == "__main__":
     print(f"Rules are: {rules}")
 
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.1752
+        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.1735
     )
     model = normalize_tree(model)
     pm4py.view_process_tree(model)  # Visualize the process tree
