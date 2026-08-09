@@ -45,6 +45,9 @@ def timeout_handler(signum, frame):
     raise TraceTimeout
 
 
+signal.signal(signal.SIGALRM, timeout_handler)
+
+
 def prefix_of_log(log: List[List[str]]) -> List[List[str]]:
     """Return all non-empty prefixes occurring in the log."""
     return [trace[:i] for trace in log for i in range(1, len(trace) + 1)]
