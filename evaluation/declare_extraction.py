@@ -392,7 +392,7 @@ def declarative_model_fitness(
 
     for trace, count in trace_counts.items():
         try:
-            signal.alarm(60)
+            signal.alarm(20)
 
             if accepts_trace(trace, product):
                 cost = 0
@@ -1044,7 +1044,6 @@ if __name__ == "__main__":
         "14",
         "15",
         "17",
-        "18",
         "19",
         "20",
     ]

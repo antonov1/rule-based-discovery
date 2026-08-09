@@ -169,7 +169,7 @@ def base_cases(
 
     if not nodes:
         # The candidate base case is tau / the empty trace.
-        unsat_rules = [
+        unsat_rules = {
             rule
             for rule in rules
             if isinstance(
@@ -180,7 +180,7 @@ def base_cases(
                     EndRule,
                 ),
             )
-        ]
+        }
 
         if unsat_rules:
             return unsat_rules
@@ -219,7 +219,7 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
                 if target != activity:
                     unsat_rules.append(r)
         if unsat_rules:
-            return unsat_rules
+            return set(unsat_rules)
         else:
             return ProcessTree(label=activity)
 

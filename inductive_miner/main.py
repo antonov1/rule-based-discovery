@@ -31,7 +31,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -536,18 +536,8 @@ def apply_IM(
 
 
 if __name__ == "__main__":
-    rules = [
-        PrecedenceRule("n", "d"),
-        RespondedExistenceRule("m", "b"),
-        AtMostOnceRule("e"),
-        PrecedenceRule("l", "m"),
-        ExistenceRule("a"),
-        ResponseRule("n", "d"),
-        NotCoExistenceRule("f", "h"),
-        NotCoExistenceRule("h", "m"),
-        RespondedExistenceRule("o", "h"),
-    ]
-    log = pm4py.read_xes("./inductive_miner/log_929.xes", variant="iterparse")
+    rules = [AtMostOnceRule("w"), NotCoExistenceRule("f", "r"), AtMostOnceRule("r")]
+    log = pm4py.read_xes("./inductive_miner/log_494.xes", variant="iterparse")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
@@ -559,9 +549,8 @@ if __name__ == "__main__":
     # rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
     print(f"Rules are: {rules}")
-
     model = apply_IM_with_rules(
-        log, rules=rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.1735
+        log=log, rules=rules, repair_mode=RepairVariant.EditDistance
     )
     model = normalize_tree(model)
     pm4py.view_process_tree(model)  # Visualize the process tree
