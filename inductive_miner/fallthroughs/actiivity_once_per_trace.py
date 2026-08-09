@@ -4,14 +4,14 @@ import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator
-from rules import AbstractRule, ExistenceRule
+from rules import AbstractRule, AtMostOnceRule, ExistenceRule
 
 
 def detect_based_on_rules(log: List[List[str]], rules: List[AbstractRule]):
     alphabet = set([e for trace in log for e in trace])
     candidates = []
     for r in rules:
-        if isinstance(r, ExistenceRule):
+        if isinstance(r, (ExistenceRule, AtMostOnceRule)):
             candidates.append(r.target_activity)
     candidates = sorted(set(candidates))
     for c in candidates:

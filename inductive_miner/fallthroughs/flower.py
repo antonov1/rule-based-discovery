@@ -1,6 +1,7 @@
 from inductive_miner.cuts import LoopCut
 from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator
+from rules import AtMostOnceRule
 
 
 def apply(
@@ -8,14 +9,72 @@ def apply(
     rules=None,
     **kwargs,
 ) -> Decomposition:
+    rules = rules or []
+
     activities = sorted({activity for trace in log for activity in trace})
+
     if len(activities) < 2:
         return None
+
+    at_most_once = {
+        rule.target_activity
+        for rule in rules
+        if isinstance(rule, AtMostOnceRule) and rule.target_activity in activities
+    }
+
+    if at_most_once:
+        remaining = set(activities) - at_most_once
+
+        sublogs = []
+        projected_rules = []
+
+        # One branch per AtMostOnce constraint
+        for activity in sorted(at_most_once):
+            projected_log = [
+                [event for event in trace if event == activity] for trace in log
+            ]
+
+            sublogs.append(projected_log)
+
+            projected_rules.append(
+                [
+                    rule
+                    for rule in rules
+                    if isinstance(rule, AtMostOnceRule)
+                    and rule.target_activity == activity
+                ]
+            )
+
+        if remaining:
+            remaining_log = [
+                [event for event in trace if event in remaining] for trace in log
+            ]
+
+            sublogs.append(remaining_log)
+
+            remaining_rules = [
+                rule
+                for rule in rules
+                if not (
+                    isinstance(rule, AtMostOnceRule)
+                    and rule.target_activity in at_most_once
+                )
+            ]
+
+            projected_rules.append(remaining_rules)
+
+        return Decomposition(
+            operator=Operator.PARALLEL,
+            sublogs=sublogs,
+            projected_rules=projected_rules,
+        )
+
+    # The stadnard flower
     redo_log = [[a] for a in activities]
     groups = [set(), set(activities)]
 
     return Decomposition(
         operator=Operator.LOOP,
         sublogs=[[], redo_log],
-        projected_rules=LoopCut.project_rules(rules, groups) if rules else None,
+        projected_rules=(LoopCut.project_rules(rules, groups) if rules else None),
     )

@@ -469,7 +469,6 @@ def detect_rule_based_po(
 
     if activity_graph.number_of_edges() == 0 and not start_nodes and not end_nodes:
         return None
-
     # if not nx.is_directed_acyclic_graph(activity_graph):
     #    return None
 

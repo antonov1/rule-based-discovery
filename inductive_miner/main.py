@@ -121,6 +121,10 @@ def preprocess_and_apply_IM_with_rules(
     if isinstance(log, pd.DataFrame):
         log = preprocess_log(log)
     rules, log = preprocess_rule_set(rules, log)
+    print(f"Rules are: {rules}")
+    acts = {e for trace in log for e in trace}
+    print(f"Activities in log are: {acts}")
+    input(".dwq")
     return apply_IM_with_rules(
         log=log, rules=rules, repair_mode=repair_mode, noise_threshold=noise_threshold
     )
@@ -536,8 +540,19 @@ def apply_IM(
 
 
 if __name__ == "__main__":
-    rules = [AtMostOnceRule("w"), NotCoExistenceRule("f", "r"), AtMostOnceRule("r")]
-    log = pm4py.read_xes("./inductive_miner/log_494.xes", variant="iterparse")
+    rules = [
+        PrecedenceRule("o", "q"),
+        ResponseRule("n", "e"),
+        ChainPrecedenceRule("l", "k"),
+        AtMostOnceRule("a"),
+        NotCoExistenceRule("i", "m"),
+        AtMostOnceRule("i"),
+        AtMostOnceRule("c"),
+        ResponseRule("q", "o"),
+        ChainPrecedenceRule("b", "q"),
+        AtMostOnceRule("r"),
+    ]
+    log = pm4py.read_xes("./inductive_miner/log_144.xes", variant="iterparse")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
@@ -550,9 +565,10 @@ if __name__ == "__main__":
     print(f"Rules are: {rules}")
     print(f"Rules are: {rules}")
     model = apply_IM_with_rules(
-        log=log, rules=rules, repair_mode=RepairVariant.EditDistance
+        log=log, rules=rules, repair_mode=RepairVariant.TraceLevel
     )
     model = normalize_tree(model)
+    print(f"Final model is: {model}")
     pm4py.view_process_tree(model)  # Visualize the process tree
     fitness = fitness_token_based_tree(log_org, model)
     prec = precision_token_based_tree(log_org, model)
