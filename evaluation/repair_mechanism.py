@@ -241,7 +241,6 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             f"Trial {current_idx} failed: {exc}\n" f"{traceback.format_exc()}",
             flush=True,
         )
-        input("...")
         return None
 
 

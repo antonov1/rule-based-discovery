@@ -124,7 +124,6 @@ def preprocess_and_apply_IM_with_rules(
     print(f"Rules are: {rules}")
     acts = {e for trace in log for e in trace}
     print(f"Activities in log are: {acts}")
-    input(".dwq")
     return apply_IM_with_rules(
         log=log, rules=rules, repair_mode=repair_mode, noise_threshold=noise_threshold
     )
