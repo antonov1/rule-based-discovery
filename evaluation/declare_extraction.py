@@ -48,6 +48,35 @@ def timeout_handler(signum, frame):
 signal.signal(signal.SIGALRM, timeout_handler)
 
 
+def update_results_table(
+    old: pd.DataFrame,
+    new: pd.DataFrame,
+    keys=("process_id", "description_type"),
+) -> pd.DataFrame:
+    keys = list(keys)
+
+    old = old.copy()
+    new = new.copy()
+
+    old["process_id"] = old["process_id"].astype(str).str.zfill(2)
+    new["process_id"] = new["process_id"].astype(str).str.zfill(2)
+
+    new_keys = new[keys].drop_duplicates()
+
+    old = old.merge(
+        new_keys.assign(_replace=True),
+        on=keys,
+        how="left",
+    )
+
+    old = old[old["_replace"].isna()].drop(columns="_replace")
+
+    return pd.concat(
+        [old, new],
+        ignore_index=True,
+    )
+
+
 def prefix_of_log(log: List[List[str]]) -> List[List[str]]:
     """Return all non-empty prefixes occurring in the log."""
     return [trace[:i] for trace in log for i in range(1, len(trace) + 1)]
@@ -387,7 +416,8 @@ def declarative_model_fitness(
     total_cost = 0
     perfectly_fitting = 0
     trace_fitness = []
-
+    evaluated_trace_count = 0
+    evaluated_event_count = 0
     trace_counts = Counter(tuple(trace) for trace in event_log)
 
     for trace, count in trace_counts.items():
@@ -405,22 +435,31 @@ def declarative_model_fitness(
 
         finally:
             signal.alarm(0)
-
+        evaluated_trace_count += count
+        evaluated_event_count += len(trace) * count
         total_cost += cost * count
 
         if cost == 0:
             perfectly_fitting += count
 
-    fitness = 1 - cost / (min_replayable_length + len(trace))
-    trace_fitness.extend([fitness] * count)
+        fitness = 1 - cost / (min_replayable_length + len(trace))
+        trace_fitness.extend([fitness] * count)
 
-    num_events = sum(len(trace) for trace in event_log)
+    if evaluated_trace_count == 0:
+        return {
+            "Satisfiable": True,
+            "PerfectlyFittingTraces": 0.0,
+            "LogFitness": 0.0,
+            "AvgTraceFitness": 0.0,
+            "AvgConstraintConformance": float(np.mean(rule_fitness_values)),
+        }
 
     return {
         "Satisfiable": True,
-        "PerfectlyFittingTraces": perfectly_fitting / len(event_log),
+        "PerfectlyFittingTraces": perfectly_fitting / evaluated_trace_count,
         "LogFitness": 1
-        - total_cost / (len(event_log) * min_replayable_length + num_events),
+        - total_cost
+        / (evaluated_trace_count * min_replayable_length + evaluated_event_count),
         "AvgTraceFitness": float(np.mean(trace_fitness)),
         "AvgConstraintConformance": float(np.mean(rule_fitness_values)),
     }
@@ -813,6 +852,25 @@ def evaluate(
 
     results_df = pd.DataFrame(rows)
 
+    # --------------------------------------------------------
+    # Merge rerun results with existing results
+    # --------------------------------------------------------
+
+    if os.path.exists(results_path):
+        existing_results = pd.read_csv(
+            results_path,
+            dtype={"process_id": str},
+        )
+
+        results_df = update_results_table(
+            existing_results,
+            results_df,
+        )
+
+    # --------------------------------------------------------
+    # Normalize numeric columns
+    # --------------------------------------------------------
+
     numeric_columns = [
         "description_length",
         "description_word_count",
@@ -853,6 +911,8 @@ def evaluate(
         ordered=True,
     )
 
+    results_df["process_id"] = results_df["process_id"].astype(str).str.zfill(2)
+
     results_df = results_df.sort_values(
         [
             "process_id",
@@ -864,6 +924,10 @@ def evaluate(
         results_path,
         index=False,
     )
+
+    # --------------------------------------------------------
+    # Rebuild summary from complete merged results
+    # --------------------------------------------------------
 
     summary_df = (
         results_df.groupby(
@@ -907,9 +971,6 @@ def evaluate(
                 "attempts",
                 "mean",
             ),
-            # --------------------------------------------------------
-            # Precision
-            # --------------------------------------------------------
             original_precision=(
                 "original_precision",
                 "mean",
@@ -926,9 +987,6 @@ def evaluate(
                 "generated_precision",
                 "std",
             ),
-            # --------------------------------------------------------
-            # Constraint-set similarity
-            # --------------------------------------------------------
             constraint_based_similarity=(
                 "constraint_based_similarity",
                 "mean",
@@ -937,9 +995,6 @@ def evaluate(
                 "constraint_based_similarity",
                 "std",
             ),
-            # --------------------------------------------------------
-            # Slot-based evaluation
-            # --------------------------------------------------------
             slot_precision=(
                 "slot_precision",
                 "mean",
@@ -956,9 +1011,6 @@ def evaluate(
                 "slot_f1",
                 "std",
             ),
-            # --------------------------------------------------------
-            # Original-model fitness
-            # --------------------------------------------------------
             original_perfectly_fitting_traces=(
                 "original_perfectly_fitting_traces",
                 "mean",
@@ -975,9 +1027,6 @@ def evaluate(
                 "original_avg_constraint_conformance",
                 "mean",
             ),
-            # --------------------------------------------------------
-            # Generated-model fitness
-            # --------------------------------------------------------
             generated_perfectly_fitting_traces=(
                 "generated_perfectly_fitting_traces",
                 "mean",
@@ -1088,8 +1137,10 @@ if __name__ == "__main__":
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4-mini", "OpenAI", {}),
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.6-luna", "OpenAI", {}),
         LLMConnection(os.getenv("OPENAI_API_KEY"), "gpt-5.4", "OpenAI", {}),
-        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.1-pro-preview", {}),
-        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.5-flash", {}),
+        LLMConnection(
+            os.getenv("GOOGLE_API_KEY"), "gemini-3.1-pro-preview", "Google", {}
+        ),
+        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.5-flash", "Google", {}),
     ]
 
     for connection in connections:
