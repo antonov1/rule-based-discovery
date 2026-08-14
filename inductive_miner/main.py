@@ -75,6 +75,7 @@ def mine_decomposition(
     im_function: Callable,
     repair_mode=None,
     noise_threshold=None,
+    **kwargs,
 ):
     parent = ProcessTree(operator=decomposition.operator)
 
@@ -540,7 +541,7 @@ def apply_IM(
 
 if __name__ == "__main__":
     rules = [
-        PrecedenceRule("o", "q"),
+        ResponseRule("o", "q"),
         ResponseRule("n", "e"),
         ChainPrecedenceRule("l", "k"),
         AtMostOnceRule("a"),
@@ -563,9 +564,7 @@ if __name__ == "__main__":
     # rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
     print(f"Rules are: {rules}")
-    model = apply_IM_with_rules(
-        log=log, rules=rules, repair_mode=RepairVariant.TraceLevel
-    )
+    model = apply_IM_with_rules(log=log, rules=rules, repair_mode=RepairVariant.Naive)
     model = normalize_tree(model)
     print(f"Final model is: {model}")
     pm4py.view_process_tree(model)  # Visualize the process tree

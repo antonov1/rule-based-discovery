@@ -4,6 +4,10 @@ from pm4py.objects.process_tree.obj import Operator
 from rules import AtMostOnceRule
 
 
+def same_rules(rules_a, rules_b):
+    return sorted(map(str, rules_a or [])) == sorted(map(str, rules_b or []))
+
+
 def apply(
     log,
     rules=None,
@@ -72,9 +76,12 @@ def apply(
     # The stadnard flower
     redo_log = [[a] for a in activities]
     groups = [set(), set(activities)]
+    redo_rules = LoopCut.project_rules(rules, groups) if rules else None
 
+    if redo_log == log and same_rules(redo_rules[1], rules):
+        return None
     return Decomposition(
         operator=Operator.LOOP,
         sublogs=[[], redo_log],
-        projected_rules=(LoopCut.project_rules(rules, groups) if rules else None),
+        projected_rules=redo_rules,
     )

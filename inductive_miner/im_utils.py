@@ -610,6 +610,13 @@ def apply_edit_distance_repair(
     return log, new_rules
 
 
+def problem_signature(log, rules):
+    return (
+        tuple(sorted(tuple(trace) for trace in log)),
+        tuple(sorted(str(rule) for rule in (rules or []))),
+    )
+
+
 if __name__ == "__main__":
     from automata.fa.dfa import DFA
 

@@ -6,9 +6,52 @@ from inductive_miner.cuts.exclusive import ExclusiveChoiceCut
 from inductive_miner.fallthroughs.fallthrough_utils import add_child, build_signed_cdg
 from inductive_miner.im_utils import RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AbstractRule, ExistenceRule, NotCoExistenceRule, ResponseRule
+from rules import (
+    AbstractRule,
+    ExistenceRule,
+    NotCoExistenceRule,
+    NotSuccessionRule,
+    ResponseRule,
+)
 
 ARTIFICIAL_NONE_NODE = "ArtificialNoneNode"
+
+
+def normalize_not_succession_pairs(
+    rules: List[AbstractRule],
+) -> List[AbstractRule]:
+    rules = list(rules or [])
+
+    not_succession_pairs = {
+        (r.activity_a, r.activity_b) for r in rules if isinstance(r, NotSuccessionRule)
+    }
+
+    symmetric_pairs = {
+        tuple(sorted((a, b)))
+        for a, b in not_succession_pairs
+        if (b, a) in not_succession_pairs
+    }
+
+    normalized_rules = [
+        r
+        for r in rules
+        if not (
+            isinstance(r, NotSuccessionRule)
+            and tuple(sorted((r.activity_a, r.activity_b))) in symmetric_pairs
+        )
+    ]
+
+    existing_not_coexistence = {
+        tuple(sorted((r.activity_a, r.activity_b)))
+        for r in normalized_rules
+        if isinstance(r, NotCoExistenceRule)
+    }
+
+    for a, b in symmetric_pairs:
+        if (a, b) not in existing_not_coexistence:
+            normalized_rules.append(NotCoExistenceRule(a, b))
+
+    return normalized_rules
 
 
 def forced_by_existence(
@@ -105,6 +148,8 @@ def apply(
     **kwargs,
 ) -> Optional[ProcessTree]:
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
+    rules = normalize_not_succession_pairs(rules)
+
     if not any(isinstance(r, NotCoExistenceRule) for r in rules or []):
         # inapplicable
         return None
@@ -155,10 +200,12 @@ def apply(
 
 if __name__ == "__main__":
     rules = [
-        NotCoExistenceRule("A", "B"),
+        NotSuccessionRule("A", "B"),
+        NotSuccessionRule("B", "A"),
         ResponseRule("B", "D"),
         NotCoExistenceRule("C", "D"),
     ]
+    rules = normalize_not_succession_pairs(rules)
     alphabet = {"A", "B", "C", "D"}
     positive_graph, negative_graph = build_signed_cdg(rules, alphabet)
     print(

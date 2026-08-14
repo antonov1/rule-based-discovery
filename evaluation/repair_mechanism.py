@@ -14,7 +14,7 @@ from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import (
     apply_IM,
     apply_IM_with_rules,
-    preprocess_and_apply_IM_with_rules,
+    apply_IM_with_rules,
     preprocess_log as simplify_log,
 )
 from llm_connection.query import code_extraction
@@ -408,7 +408,7 @@ def evaluate_dataset(ids: List[str]):
                 time_norepair = time.perf_counter()
 
                 model_norepair = normalize_tree(
-                    preprocess_and_apply_IM_with_rules(
+                    apply_IM_with_rules(
                         log, rules=sampled_rules, repair_mode=RepairVariant.Naive
                     )
                 )
@@ -428,7 +428,7 @@ def evaluate_dataset(ids: List[str]):
                 )
                 time_trace = time.perf_counter()
                 model_trace = normalize_tree(
-                    preprocess_and_apply_IM_with_rules(
+                    apply_IM_with_rules(
                         log,
                         rules=sampled_rules,
                         repair_mode=RepairVariant.TraceLevel,
@@ -470,7 +470,7 @@ def evaluate_dataset(ids: List[str]):
                 time_event = time.perf_counter()
 
                 model_event = normalize_tree(
-                    preprocess_and_apply_IM_with_rules(
+                    apply_IM_with_rules(
                         log,
                         rules=sampled_rules,
                         repair_mode=RepairVariant.EventLevel,
@@ -511,7 +511,7 @@ def evaluate_dataset(ids: List[str]):
                 time_edit = time.perf_counter()
 
                 model_edit = normalize_tree(
-                    preprocess_and_apply_IM_with_rules(
+                    apply_IM_with_rules(
                         log,
                         rules=sampled_rules,
                         repair_mode=RepairVariant.EditDistance,

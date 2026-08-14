@@ -20,6 +20,7 @@ from rules import (
     ExistenceRule,
     InitializationRule,
     NotCoExistenceRule,
+    NotSuccessionRule,
     PrecedenceRule,
     ResponseRule,
 )
@@ -641,34 +642,6 @@ def try_label_splitting(
     return None
 
 
-def __check_applicability_of_label_splitting(branch_rules: List[AbstractRule]) -> bool:
-    if not any(
-        isinstance(r, PrecedenceRule) or isinstance(r, ChainPrecedenceRule)
-        for r in branch_rules
-    ) and not any(
-        isinstance(r, ResponseRule) or isinstance(r, ChainResponseRule)
-        for r in branch_rules
-    ):
-        return False
-    relevant_rule_types = (
-        PrecedenceRule,
-        ChainPrecedenceRule,
-        ChainResponseRule,
-        ResponseRule,
-    )
-    relevant_rules = [r for r in branch_rules if isinstance(r, relevant_rule_types)]
-    if not relevant_rules:
-        return False
-    dependencies = []
-    for r in relevant_rules:
-        a, b = r.activity_a, r.activity_b
-        # b depends on a
-        if (b, a) in dependencies:
-            return True
-        dependencies.append((a, b))
-    return False
-
-
 def po_to_parallel_sequence_branches(
     po: RuleBasedPO,
     rules: List[AbstractRule],
@@ -768,7 +741,6 @@ def mine_sequence_branch(
 
     for i, projected_log in enumerate(projections):
         child_rules = projected_rules[i] if projected_rules else []
-
         child = im_function(
             projected_log,
             child_rules or [],
@@ -862,8 +834,20 @@ if __name__ == "__main__":
             "b",
         ],
     ]
-    alphabet = {"b", "o"}
-
+    alphabet = {"A", "B", "C", "D", "E", "F"}
+    rules = [
+        InitializationRule("A"),
+        ResponseRule("B", "C"),
+        ChainResponseRule("D", "E"),
+        PrecedenceRule("D", "F"),
+        NotSuccessionRule("D", "B"),
+        NotSuccessionRule("B", "D"),
+    ]
+    log = [
+        ["A", "B", "D", "E", "C", "F"],
+        ["A", "B", "D", "E", "C", "F"],
+        ["A", "B", "D", "E", "C", "F"],
+    ]
     dfg = DirectlyFollowsGraph(log).graph
 
     # print("DFG nodes:")
@@ -875,7 +859,8 @@ if __name__ == "__main__":
     po = detect_rule_based_po(rules, alphabet, dfg)
     print("Detected PO:")
     print(po)
-
+    print(po.groups)
+    print(po.edges)
     if po is not None:
         branches = po_to_parallel_sequence_branches(po, rules)
         print("Branches:")
