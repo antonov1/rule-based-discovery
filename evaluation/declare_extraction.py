@@ -384,6 +384,14 @@ def declarative_model_fitness(
 ) -> Dict[str, float]:
     automata = {rule: rule.to_automaton(alphabet) for rule in rule_set}
     product = product_automaton(rule_set, alphabet, automata)
+    if len(rule_set) == 0:
+        return {
+            "Satisfiable": True,
+            "PerfectlyFittingTraces": 0.0,
+            "LogFitness": 0.0,
+            "AvgTraceFitness": 0.0,
+            "AvgConstraintConformance": 0.0,
+        }
 
     if not product.final_states:
         return {
@@ -1098,6 +1106,7 @@ if __name__ == "__main__":
     ]
     load_dotenv(".env", override=True)
     connections = [
+        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.5-flash", "Google", {}),
         LLMConnection(
             os.getenv("AZURE_ONE_KEY"),
             "granite4.1:30b",
@@ -1140,7 +1149,6 @@ if __name__ == "__main__":
         LLMConnection(
             os.getenv("GOOGLE_API_KEY"), "gemini-3.1-pro-preview", "Google", {}
         ),
-        LLMConnection(os.getenv("GOOGLE_API_KEY"), "gemini-3.5-flash", "Google", {}),
     ]
 
     for connection in connections:
