@@ -295,7 +295,9 @@ def apply_IM_with_rules(
             if ENABLE_PRINTS:
                 print("---")
                 print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
-                print("result", result)
+                print("result", result.operator)
+                print("projected rules", result.projected_rules)
+
                 print("---")
 
             return mine_decomposition(
@@ -351,7 +353,11 @@ def apply_IM_with_rules(
             if ENABLE_PRINTS:
                 print("---")
                 print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
-                print("result", res)
+                if isinstance(res, Decomposition):
+                    print("result", result.operator)
+                    print("projected rules", result.projected_rules)
+                else:
+                    print("result", result)
 
                 print("---")
 
@@ -528,7 +534,8 @@ def apply_IM(
         if ENABLE_PRINTS:
             print("---")
             print("APPLIED FALLTHROUGH:", name)
-            print("result", result)
+            print("result", result.operator)
+            print("projected rules", result.projected_rules)
             print("---")
 
         return mine_decomposition(
@@ -541,18 +548,15 @@ def apply_IM(
 
 if __name__ == "__main__":
     rules = [
-        ResponseRule("o", "q"),
-        ResponseRule("n", "e"),
-        ChainPrecedenceRule("l", "k"),
-        AtMostOnceRule("a"),
-        NotCoExistenceRule("i", "m"),
-        AtMostOnceRule("i"),
-        AtMostOnceRule("c"),
-        ResponseRule("q", "o"),
-        ChainPrecedenceRule("b", "q"),
-        AtMostOnceRule("r"),
+        NotCoExistenceRule("q", "t"),
+        RespondedExistenceRule("r", "e"),
+        NotCoExistenceRule("b", "t"),
+        NotCoExistenceRule("d", "h"),
+        NotCoExistenceRule("e", "z"),
+        NotCoExistenceRule("d", "y"),
+        AtMostOnceRule("y"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_144.xes", variant="iterparse")
+    log = pm4py.read_xes("./inductive_miner/log_472.xes", variant="iterparse")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
@@ -564,7 +568,9 @@ if __name__ == "__main__":
     # rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
     print(f"Rules are: {rules}")
-    model = apply_IM_with_rules(log=log, rules=rules, repair_mode=RepairVariant.Naive)
+    model = apply_IM_with_rules(
+        log=log, rules=rules, repair_mode=RepairVariant.EditDistance
+    )
     model = normalize_tree(model)
     print(f"Final model is: {model}")
     pm4py.view_process_tree(model)  # Visualize the process tree

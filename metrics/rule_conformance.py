@@ -50,7 +50,7 @@ def weighted_conformance(
         if len(intersection.final_states) > 0:
             sup_unsat.append(sup)
             unsat_rules.append(rule)
-    return 1 - sum(sup_unsat) / sum(sup_all), unsat_rules
+    return 1 - sum(sup_unsat) / len(rules) * max(sup_all), unsat_rules
 
 
 def conformance(model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str]):
