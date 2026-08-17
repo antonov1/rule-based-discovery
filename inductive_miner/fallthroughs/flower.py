@@ -1,7 +1,7 @@
 from inductive_miner.cuts import LoopCut
 from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator
-from rules import AtMostOnceRule
+from rules import AtMostOnceRule, ExistenceRule
 
 
 def same_rules(rules_a, rules_b):
@@ -20,20 +20,21 @@ def apply(
     if len(activities) < 2:
         return None
 
-    at_most_once = {
+    mandatory = {
         rule.target_activity
         for rule in rules
-        if isinstance(rule, AtMostOnceRule) and rule.target_activity in activities
+        if isinstance(rule, (AtMostOnceRule, ExistenceRule))
+        and rule.target_activity in activities
     }
 
-    if at_most_once:
-        remaining = set(activities) - at_most_once
+    if mandatory:
+        remaining = set(activities) - mandatory
 
         sublogs = []
         projected_rules = []
 
-        # One branch per AtMostOnce constraint
-        for activity in sorted(at_most_once):
+        # One branch per existence/atmost1 constraint
+        for activity in sorted(mandatory):
             projected_log = [
                 [event for event in trace if event == activity] for trace in log
             ]
@@ -44,7 +45,7 @@ def apply(
                 [
                     rule
                     for rule in rules
-                    if isinstance(rule, AtMostOnceRule)
+                    if isinstance(rule, (AtMostOnceRule, ExistenceRule))
                     and rule.target_activity == activity
                 ]
             )
@@ -61,7 +62,7 @@ def apply(
                 for rule in rules
                 if not (
                     isinstance(rule, AtMostOnceRule)
-                    and rule.target_activity in at_most_once
+                    and rule.target_activity in mandatory
                 )
             ]
 

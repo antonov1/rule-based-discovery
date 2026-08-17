@@ -137,7 +137,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             return None
         len({e for trace in log_org for e in trace})
 
-        with time_limit(480):
+        with time_limit(660):
             model_prepruned = normalize_tree(apply_IM(log_org))
             len(get_non_tau_leaves(model_prepruned))
             fitness_prepruned = fitness_alignment(log, model_prepruned)
@@ -366,7 +366,7 @@ def evaluate_dataset(ids: List[str]):
                 log_copy = rule.apply(log_copy)
             perc_of_conf_traces = len(log_copy) / len(preprocessed_log) * 100
             original_acts = len({e for trace in preprocessed_log for e in trace})
-            with time_limit(420):
+            with time_limit(660):
                 print(
                     f"Trial {eval_id}: discovering prepruned model",
                     flush=True,
@@ -613,6 +613,6 @@ def evaluate_dataset(ids: List[str]):
 
 if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
-    original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
-    ids = original_dataset["trial"][:200]
+    # original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
+    ids = [i for i in range(1, 1000)]
     evaluate_dataset(ids)
