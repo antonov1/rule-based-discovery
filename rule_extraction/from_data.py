@@ -298,9 +298,7 @@ def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name
 
 
 def extract(
-    log,
-    min_support: float,
-    min_confidence: float,
+    log, min_support: float, min_confidence: float, chain_rules: bool = True
 ) -> List[AbstractRule]:
     if isinstance(log, pd.DataFrame):
         log = preprocess_log(log)
@@ -371,7 +369,7 @@ def extract(
                 min_confidence,
             )
 
-            if response_passed:
+            if response_passed and chain_rules:
                 evaluate_and_add(
                     extracted_rules,
                     ChainResponseRule(a, b),
@@ -401,7 +399,7 @@ def extract(
                 min_confidence,
             )
 
-            if precedence_passed:
+            if precedence_passed and chain_rules:
                 evaluate_and_add(
                     extracted_rules,
                     ChainPrecedenceRule(a, b),

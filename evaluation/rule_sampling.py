@@ -275,6 +275,7 @@ def evaluate_logs(
                         preprocessed_log,
                         min_support=support,
                         min_confidence=confidence,
+                        chain_rules=False,
                     )
                 )
 
