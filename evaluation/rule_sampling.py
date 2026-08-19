@@ -17,7 +17,7 @@ from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import apply_IM_with_rules, preprocess_log as simplify_log
 from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
-from metrics.precision import precision_token_based_tree
+from metrics.precision import precision_alignments_ebi
 from metrics.rule_conformance import conformance
 from pm4py.objects.conversion.log import converter as log_converter
 from pm4py.objects.process_tree.obj import ProcessTree
@@ -216,7 +216,7 @@ def evaluate_model(
     runtime = time.perf_counter() - start
 
     fitness = fitness_alignment(log, model)
-    precision = precision_token_based_tree(log, model)
+    precision = precision_alignments_ebi(log, model)
 
     return {
         "model": model,
