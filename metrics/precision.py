@@ -23,12 +23,25 @@ def precision_token_based_pnet(log, net: PetriNet, im: Marking, fm: Marking):
 
 
 def precision_alignments_ebi(log, model: ProcessTree):
-    alignments = ebi.conformance_non_stochastic_alignments(log, model)
+    try:
+        alignments = ebi.conformance_non_stochastic_alignments(
+            log,
+            model,
+        )
 
-    precision = ebi.conformance_non_stochastic_escaping_edges_precision(
-        alignments,
-        model,
-    )
-    if isinstance(precision, (list, tuple)):
-        precision = precision[0]
-    return precision
+        precision = ebi.conformance_non_stochastic_escaping_edges_precision(
+            alignments,
+            model,
+        )
+
+        # Ebi exact fraction:
+        # [floating-point approximation, numerator, denominator]
+        if isinstance(precision, (list, tuple)):
+            precision = precision[0]
+
+        return float(precision)
+
+    except Exception as e:
+        print(f"The exception is: {e}")
+        input("Press Enter to continue...")
+        return None
