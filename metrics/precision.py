@@ -70,6 +70,7 @@ def precision_alignments_ebi(log, model: ProcessTree):
 
     except Exception as e:
         print(f"Ebi precision failed: {e}", flush=True)
+        input("...")
         raise
 
     finally:
