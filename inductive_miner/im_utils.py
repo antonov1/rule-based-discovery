@@ -378,7 +378,7 @@ def repair_mechanism(
 
         # with open("repair_timings_event_level.txt", "a") as f:
         #    f.write(f"{elapsed:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
-        # return repair
+        return repair
 
     elif repair_mode == RepairVariant.TraceLevel:
         start = time.perf_counter()
@@ -386,7 +386,7 @@ def repair_mechanism(
         time.perf_counter() - start
         # with open("repair_timings_trace_level.txt", "a") as f:
         #    f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
-        # return repair
+        return repair
     elif repair_mode == RepairVariant.EditDistance:
         start = time.perf_counter()
         repair = apply_edit_distance_repair(
@@ -397,7 +397,7 @@ def repair_mechanism(
         time.perf_counter() - start
         # with open("repair_timings_edit_distance.txt", "a") as f:
         #    f.write(f"{end:.6f}, " f"{len(log)}, " f"{len(unsat_rules)}\n")
-        # return repair
+        return repair
     elif repair_mode == RepairVariant.Naive:
         return None
     else:
