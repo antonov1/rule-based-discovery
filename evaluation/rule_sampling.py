@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import signal
 import time
 import traceback
@@ -14,12 +15,46 @@ import seaborn as sns
 from evaluation.declare_extraction import constraint_based_similarity
 from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import apply_IM_with_rules, preprocess_log as simplify_log
+from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
-from metrics.precision import precision_alignment_tree
+from metrics.precision import precision_token_based_tree
 from metrics.rule_conformance import conformance
 from pm4py.objects.conversion.log import converter as log_converter
 from pm4py.objects.process_tree.obj import ProcessTree
 from rule_extraction.from_data import extract
+
+
+def load_rules(path, alphabet):
+    with open(path, "r", encoding="utf-8") as file:
+        code = file.read()
+
+    lines = []
+
+    for line_number, line in enumerate(
+        code.splitlines(),
+        start=1,
+    ):
+        line = line.strip()
+
+        if not line:
+            continue
+
+        lines.append(f"r{line_number} = {line}")
+
+    code = "\n".join(lines)
+
+    code = re.sub(r"\(\s*", "('", code)
+    code = re.sub(r"\s*,\s*", "', '", code)
+    code = re.sub(r"\s*\)", "')", code)
+
+    code = f"```python\n{code}\n```"
+
+    _, rules = code_extraction(
+        code,
+        activities=list(alphabet),
+    )
+
+    return rules
 
 
 class TimeoutException(Exception):
@@ -181,7 +216,7 @@ def evaluate_model(
     runtime = time.perf_counter() - start
 
     fitness = fitness_alignment(log, model)
-    precision = precision_alignment_tree(log, model)
+    precision = precision_token_based_tree(log, model)
 
     return {
         "model": model,
@@ -264,6 +299,43 @@ def evaluate_logs(
         rules_by_config = {}
 
         for support, confidence in parameter_settings:
+            rule_path = (
+                f"{rules_dir}/" f"{log_id}_" f"{config_name(support, confidence)}.txt"
+            )
+
+            # -------------------------------------------------
+            # Rules already computed -> load them
+            # -------------------------------------------------
+
+            if os.path.exists(rule_path):
+                print(
+                    f"Loading existing rules: "
+                    f"support={support}, "
+                    f"confidence={confidence}",
+                    flush=True,
+                )
+
+                try:
+                    rules = load_rules(
+                        rule_path,
+                        alphabet,
+                    )
+
+                    rules_by_config[(support, confidence)] = rules
+
+                    continue
+
+                except Exception:
+                    print(
+                        f"Failed to load rules from {rule_path}; " f"recomputing.",
+                        flush=True,
+                    )
+                    traceback.print_exc()
+
+            # -------------------------------------------------
+            # Rules not computed yet -> extract them
+            # -------------------------------------------------
+
             print(
                 f"Extracting rules: " f"support={support}, " f"confidence={confidence}",
                 flush=True,
@@ -281,12 +353,18 @@ def evaluate_logs(
 
                 if rules:
                     satisfiable = False
+
                     while not satisfiable:
                         random.seed(42 + len(rules))
+
                         sample = random.sample(
                             rules,
-                            random.randint(1, min(len(rules), 10)),
+                            random.randint(
+                                1,
+                                min(len(rules), 10),
+                            ),
                         )
+
                         log_org = preprocessed_log.copy()
 
                         for rule in sample:
@@ -300,16 +378,11 @@ def evaluate_logs(
 
                 save_rules(
                     rules,
-                    (
-                        f"{rules_dir}/"
-                        f"{log_id}_"
-                        f"{config_name(support, confidence)}.txt"
-                    ),
+                    rule_path,
                 )
 
             except Exception:
                 traceback.print_exc()
-
         create_heatmap(
             log_id,
             rules_by_config,
