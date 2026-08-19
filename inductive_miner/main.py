@@ -31,7 +31,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):

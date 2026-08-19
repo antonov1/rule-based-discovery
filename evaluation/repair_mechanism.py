@@ -289,11 +289,32 @@ def evaluate(
 def evaluate_dataset(ids: List[str]):
     base_dir = "./experiments/repair_mechanism"
     models_dir = f"{base_dir}/models"
-    rows = []
+    results_path = f"{base_dir}/results.csv"
 
     os.makedirs(models_dir, exist_ok=True)
 
+    # Load already computed results, if available.
+    if os.path.exists(results_path):
+        results = pd.read_csv(results_path)
+
+        if "trial" in results.columns:
+            # Normalize to strings so IDs such as 1 and "1" compare consistently.
+            completed_ids = set(results["trial"].astype(str))
+        else:
+            completed_ids = set()
+    else:
+        results = pd.DataFrame()
+        completed_ids = set()
+
     for eval_id in ids:
+        # Skip trials that are already present in results.csv.
+        if str(eval_id) in completed_ids:
+            print(
+                f"Trial {eval_id}: already present in results, skipping",
+                flush=True,
+            )
+            continue
+
         print(f"Starting trial {eval_id}", flush=True)
 
         try:
@@ -361,19 +382,26 @@ def evaluate_dataset(ids: List[str]):
                     flush=True,
                 )
                 continue
+
             log_copy = preprocessed_log.copy()
+
             for rule in sampled_rules:
                 log_copy = rule.apply(log_copy)
+
             perc_of_conf_traces = len(log_copy) / len(preprocessed_log) * 100
             original_acts = len({e for trace in preprocessed_log for e in trace})
-            with time_limit(660):
+
+            # Everything expensive stays under the existing timeout.
+            with time_limit(900):
                 print(
                     f"Trial {eval_id}: discovering prepruned model",
                     flush=True,
                 )
+
                 time_prepruned = time.perf_counter()
                 model_prepruned = normalize_tree(apply_IM(log_org))
                 time_prepruned = time.perf_counter() - time_prepruned
+
                 fitness_prepruned = fitness_alignment(
                     log,
                     model_prepruned,
@@ -388,6 +416,7 @@ def evaluate_dataset(ids: List[str]):
                     * precision_prepruned
                     / (fitness_prepruned + precision_prepruned)
                 )
+
                 prepruned_acts = len(get_non_tau_leaves(model_prepruned))
 
                 conformance_prepruned = conformance(
@@ -402,21 +431,32 @@ def evaluate_dataset(ids: List[str]):
                 )
 
                 print(
-                    f"Trial {eval_id}: trace-level model",
+                    f"Trial {eval_id}: no-repair model",
                     flush=True,
                 )
+
                 time_norepair = time.perf_counter()
 
                 model_norepair = normalize_tree(
                     apply_IM_with_rules(
-                        log, rules=sampled_rules, repair_mode=RepairVariant.Naive
+                        log,
+                        rules=sampled_rules,
+                        repair_mode=RepairVariant.Naive,
                     )
                 )
+
                 time_norepair = time.perf_counter() - time_norepair
 
                 norepair_acts = len(get_non_tau_leaves(model_norepair))
-                fitness_norepair = fitness_alignment(log, model_norepair)
-                precision_norepair = precision_alignment_tree(log, model_norepair)
+
+                fitness_norepair = fitness_alignment(
+                    log,
+                    model_norepair,
+                )
+                precision_norepair = precision_alignment_tree(
+                    log,
+                    model_norepair,
+                )
                 f1_norepair = (
                     2
                     * fitness_norepair
@@ -424,9 +464,18 @@ def evaluate_dataset(ids: List[str]):
                     / (fitness_norepair + precision_norepair)
                 )
                 conformance_norepair = conformance(
-                    model_norepair, sampled_rules, alphabet
+                    model_norepair,
+                    sampled_rules,
+                    alphabet,
                 )
+
+                print(
+                    f"Trial {eval_id}: trace-level model",
+                    flush=True,
+                )
+
                 time_trace = time.perf_counter()
+
                 model_trace = normalize_tree(
                     apply_IM_with_rules(
                         log,
@@ -434,6 +483,7 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.TraceLevel,
                     )
                 )
+
                 time_trace = time.perf_counter() - time_trace
 
                 trace_acts = len(get_non_tau_leaves(model_trace))
@@ -467,6 +517,7 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: event-level model",
                     flush=True,
                 )
+
                 time_event = time.perf_counter()
 
                 model_event = normalize_tree(
@@ -476,6 +527,7 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.EventLevel,
                     )
                 )
+
                 time_event = time.perf_counter() - time_event
 
                 fitness_event = fitness_alignment(
@@ -497,6 +549,7 @@ def evaluate_dataset(ids: List[str]):
                     sampled_rules,
                     alphabet,
                 )
+
                 event_acts = len(get_non_tau_leaves(model_event))
 
                 pm4py.write_ptml(
@@ -508,6 +561,7 @@ def evaluate_dataset(ids: List[str]):
                     f"Trial {eval_id}: edit-distance model",
                     flush=True,
                 )
+
                 time_edit = time.perf_counter()
 
                 model_edit = normalize_tree(
@@ -517,7 +571,9 @@ def evaluate_dataset(ids: List[str]):
                         repair_mode=RepairVariant.EditDistance,
                     )
                 )
+
                 time_edit = time.perf_counter() - time_edit
+
                 fitness_edit = fitness_alignment(
                     log,
                     model_edit,
@@ -529,6 +585,7 @@ def evaluate_dataset(ids: List[str]):
                 f1_edit = (
                     2 * fitness_edit * precision_edit / (fitness_edit + precision_edit)
                 )
+
                 edit_acts = len(get_non_tau_leaves(model_edit))
 
                 conformance_edit = conformance(
@@ -552,59 +609,77 @@ def evaluate_dataset(ids: List[str]):
         except Exception:
             traceback.print_exc()
             continue
-        rows.append(
-            {
-                "trial": eval_id,
-                "num_events": len(log),
-                "num_cases": log["case:concept:name"].nunique(),
-                "num_rules": len(sampled_rules),
-                "num_acts": original_acts,
-                "conforming_traces_perc": perc_of_conf_traces,
-                "Prepruned_acts": prepruned_acts,
-                "Prepruned_Fitness": fitness_prepruned,
-                "Prepruned_Precision": precision_prepruned,
-                "Prepruned_F1": f1_prepruned,
-                "Prepruned_Conformance": conformance_prepruned[0],
-                "RIM_NoRepair_acts": norepair_acts,
-                "RIM_Fitness_NoRepair": fitness_norepair,
-                "RIM_Precision_NoRepair": precision_norepair,
-                "RIM_F1_NoRepair": f1_norepair,
-                "RIM_Conformance_NoRepair": conformance_norepair[0],
-                "RIM_TraceLevel_acts": trace_acts,
-                "RIM_Fitness_TraceLevel": fitness_trace,
-                "RIM_Precision_TraceLevel": precision_trace,
-                "RIM_F1_TraceLevel": f1_trace,
-                "RIM_Conformance_TraceLevel": conformance_trace[0],
-                "RIM_EventLevel_acts": event_acts,
-                "RIM_Fitness_EventLevel": fitness_event,
-                "RIM_Precision_EventLevel": precision_event,
-                "RIM_F1_EventLevel": f1_event,
-                "RIM_Conformance_EventLevel": conformance_event[0],
-                "RIM_EditDistance_acts": edit_acts,
-                "RIM_Fitness_EditDistance": fitness_edit,
-                "RIM_Precision_EditDistance": precision_edit,
-                "RIM_F1_EditDistance": f1_edit,
-                "RIM_Conformance_EditDistance": conformance_edit[0],
-                "Time_Prepruned": time_prepruned,
-                "Time_RIM_NoRepair": time_norepair,
-                "Time_RIM_TraceLevel": time_trace,
-                "Time_RIM_EventLevel": time_event,
-                "Time_RIM_Edit": time_edit,
-            }
+
+        row = {
+            "trial": eval_id,
+            "num_events": len(log),
+            "num_cases": log["case:concept:name"].nunique(),
+            "num_rules": len(sampled_rules),
+            "num_acts": original_acts,
+            "conforming_traces_perc": perc_of_conf_traces,
+            "Prepruned_acts": prepruned_acts,
+            "Prepruned_Fitness": fitness_prepruned,
+            "Prepruned_Precision": precision_prepruned,
+            "Prepruned_F1": f1_prepruned,
+            "Prepruned_Conformance": conformance_prepruned[0],
+            "RIM_NoRepair_acts": norepair_acts,
+            "RIM_Fitness_NoRepair": fitness_norepair,
+            "RIM_Precision_NoRepair": precision_norepair,
+            "RIM_F1_NoRepair": f1_norepair,
+            "RIM_Conformance_NoRepair": conformance_norepair[0],
+            "RIM_TraceLevel_acts": trace_acts,
+            "RIM_Fitness_TraceLevel": fitness_trace,
+            "RIM_Precision_TraceLevel": precision_trace,
+            "RIM_F1_TraceLevel": f1_trace,
+            "RIM_Conformance_TraceLevel": conformance_trace[0],
+            "RIM_EventLevel_acts": event_acts,
+            "RIM_Fitness_EventLevel": fitness_event,
+            "RIM_Precision_EventLevel": precision_event,
+            "RIM_F1_EventLevel": f1_event,
+            "RIM_Conformance_EventLevel": conformance_event[0],
+            "RIM_EditDistance_acts": edit_acts,
+            "RIM_Fitness_EditDistance": fitness_edit,
+            "RIM_Precision_EditDistance": precision_edit,
+            "RIM_F1_EditDistance": f1_edit,
+            "RIM_Conformance_EditDistance": conformance_edit[0],
+            "Time_Prepruned": time_prepruned,
+            "Time_RIM_NoRepair": time_norepair,
+            "Time_RIM_TraceLevel": time_trace,
+            "Time_RIM_EventLevel": time_event,
+            "Time_RIM_Edit": time_edit,
+        }
+
+        # Append successful trial to the existing results.
+        results = pd.concat(
+            [results, pd.DataFrame([row])],
+            ignore_index=True,
         )
 
-        pd.DataFrame(rows).to_csv(
-            f"{base_dir}/results.csv",
+        completed_ids.add(str(eval_id))
+
+        if "trial" in results.columns:
+            # Numeric sorting where possible
+            results["_trial_sort"] = pd.to_numeric(
+                results["trial"],
+                errors="coerce",
+            )
+            results = (
+                results.sort_values(
+                    ["_trial_sort", "trial"],
+                    na_position="last",
+                )
+                .drop(columns="_trial_sort")
+                .reset_index(drop=True)
+            )
+
+        results.to_csv(
+            results_path,
             index=False,
         )
 
-    results = pd.DataFrame(rows)
-
-    if not results.empty:
-        results = results.sort_values("trial").reset_index(drop=True)
-
+    # Final save.
     results.to_csv(
-        f"{base_dir}/results.csv",
+        results_path,
         index=False,
     )
 
