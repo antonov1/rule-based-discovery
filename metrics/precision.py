@@ -1,3 +1,4 @@
+import ebi
 import pm4py
 from pm4py.objects.petri_net.obj import Marking, PetriNet
 from pm4py.objects.process_tree.obj import ProcessTree
@@ -19,3 +20,15 @@ def precision_token_based_tree(log, model: ProcessTree):
 
 def precision_token_based_pnet(log, net: PetriNet, im: Marking, fm: Marking):
     return pm4py.conformance.precision_token_based_replay(log, net, im, fm)
+
+
+def precision_alignments_ebi(log, model: ProcessTree):
+    alignments = ebi.conformance_non_stochastic_alignments(log, model)
+
+    precision = ebi.conformance_non_stochastic_escaping_edges_precision(
+        alignments,
+        model,
+    )
+    if isinstance(precision, (list, tuple)):
+        precision = precision[0]
+    return precision

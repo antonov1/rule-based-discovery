@@ -8,6 +8,7 @@ dependencies = [
     "automata-lib>=9.2.0",
     "beautifulsoup4>=4.14.3",
     "dotenv>=0.9.9",
+    "ebi-pm>=0.3.12",
     "galois==0.4.10",
     "gurobipy>=13.0.2",
     "matplotlib>=3.10.8",
