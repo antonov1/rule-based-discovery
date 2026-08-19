@@ -452,12 +452,14 @@ def evaluate_logs(
                     traceback.print_exc()
                     continue
 
+                noise_name = f"{noise_threshold:.1f}".replace(".", "_")
+
                 model_prefix = (
                     f"{models_dir}/"
                     f"{log_id}_"
                     f"{config_name(support, confidence)}_"
-                    f"noise_{noise_threshold:.1f}"
-                ).replace(".", "_")
+                    f"noise_{noise_name}"
+                )
 
                 pm4py.write_ptml(
                     naive["model"],
@@ -468,7 +470,6 @@ def evaluate_logs(
                     edit["model"],
                     f"{model_prefix}_edit.ptml",
                 )
-
                 row = {
                     "log_id": log_id,
                     "min_support": support,
