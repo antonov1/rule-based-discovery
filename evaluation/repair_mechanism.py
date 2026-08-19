@@ -19,7 +19,7 @@ from inductive_miner.main import (
 )
 from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
-from metrics.precision import precision_alignment_tree
+from metrics.precision import precision_alignments_ebi
 from metrics.rule_conformance import conformance
 from pm4py.algo.simulation.playout.process_tree.algorithm import (
     apply as playout_process_tree,
@@ -137,11 +137,11 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             return None
         len({e for trace in log_org for e in trace})
 
-        with time_limit(660):
+        with time_limit(600):
             model_prepruned = normalize_tree(apply_IM(log_org))
             len(get_non_tau_leaves(model_prepruned))
             fitness_prepruned = fitness_alignment(log, model_prepruned)
-            precision_prepruned = precision_alignment_tree(
+            precision_prepruned = precision_alignments_ebi(
                 log,
                 model_prepruned,
             )
@@ -163,7 +163,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                 )
             )
             fitness_trace = fitness_alignment(log, model_trace)
-            precision_trace = precision_alignment_tree(log, model_trace)
+            precision_trace = precision_alignments_ebi(log, model_trace)
             conformance_trace = conformance(
                 model_trace,
                 sampled_rules,
@@ -183,7 +183,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             )
 
             fitness_event = fitness_alignment(log, model_event)
-            precision_event = precision_alignment_tree(log, model_event)
+            precision_event = precision_alignments_ebi(log, model_event)
             conformance_event = conformance(
                 model_event,
                 sampled_rules,
@@ -203,7 +203,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             )
 
             fitness_edit = fitness_alignment(log, model_edit)
-            precision_edit = precision_alignment_tree(log, model_edit)
+            precision_edit = precision_alignments_ebi(log, model_edit)
             conformance_edit = conformance(
                 model_edit,
                 sampled_rules,
@@ -289,7 +289,7 @@ def evaluate(
 def evaluate_dataset(ids: List[str]):
     base_dir = "./experiments/repair_mechanism"
     models_dir = f"{base_dir}/models"
-    results_path = f"{base_dir}/results.csv"
+    results_path = f"{base_dir}/results_0.csv"
 
     os.makedirs(models_dir, exist_ok=True)
 
@@ -392,7 +392,7 @@ def evaluate_dataset(ids: List[str]):
             original_acts = len({e for trace in preprocessed_log for e in trace})
 
             # Everything expensive stays under the existing timeout.
-            with time_limit(900):
+            with time_limit(600):
                 print(
                     f"Trial {eval_id}: discovering prepruned model",
                     flush=True,
@@ -406,7 +406,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_prepruned,
                 )
-                precision_prepruned = precision_alignment_tree(
+                precision_prepruned = precision_alignments_ebi(
                     log,
                     model_prepruned,
                 )
@@ -453,7 +453,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_norepair,
                 )
-                precision_norepair = precision_alignment_tree(
+                precision_norepair = precision_alignments_ebi(
                     log,
                     model_norepair,
                 )
@@ -492,7 +492,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_trace,
                 )
-                precision_trace = precision_alignment_tree(
+                precision_trace = precision_alignments_ebi(
                     log,
                     model_trace,
                 )
@@ -534,7 +534,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_event,
                 )
-                precision_event = precision_alignment_tree(
+                precision_event = precision_alignments_ebi(
                     log,
                     model_event,
                 )
@@ -578,7 +578,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_edit,
                 )
-                precision_edit = precision_alignment_tree(
+                precision_edit = precision_alignments_ebi(
                     log,
                     model_edit,
                 )
