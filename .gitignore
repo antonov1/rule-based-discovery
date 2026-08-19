@@ -256,3 +256,4 @@ __pycache__/
 *.txt
 /experiments/*
 /evaluation/declare_dataset/
+/evaluation/data/
