@@ -122,9 +122,7 @@ def preprocess_and_apply_IM_with_rules(
     if isinstance(log, pd.DataFrame):
         log = preprocess_log(log)
     rules, log = preprocess_rule_set(rules, log)
-    print(f"Rules are: {rules}")
-    acts = {e for trace in log for e in trace}
-    print(f"Activities in log are: {acts}")
+    {e for trace in log for e in trace}
     return apply_IM_with_rules(
         log=log, rules=rules, repair_mode=repair_mode, noise_threshold=noise_threshold
     )
@@ -186,8 +184,6 @@ def apply_IM_with_rules(
             dfg_graph=dfg_graph,
             rules=rules,
         )
-        if ENABLE_PRINTS:
-            print(f"BASE CASE TREE {process_tree}")
 
         if isinstance(process_tree, set):
             applicable_but_rejected_cuts.append(
@@ -258,8 +254,6 @@ def apply_IM_with_rules(
                     repair_mode=repair_mode,
                     noise_threshold=noise_threshold,
                 )
-    # --- DATA-BASED FALL-THROUGH --- #
-    print("BEFORE FALLTHROUGHS:", [str(r) for r in rules])
     start_activities = dfg.start_activities
     end_activities = dfg.end_activities
     order_of_fall_throughs = [
@@ -350,17 +344,6 @@ def apply_IM_with_rules(
             noise_threshold=noise_threshold,
         )
         if res:
-            if ENABLE_PRINTS:
-                print("---")
-                print("APPLIED FALLTHROUGH:", name_of_fall_throughs[idx])
-                if isinstance(res, Decomposition):
-                    print("result", result.operator)
-                    print("projected rules", result.projected_rules)
-                else:
-                    print("result", result)
-
-                print("---")
-
             res.parent = process_tree.parent
             return res
 
@@ -548,28 +531,31 @@ def apply_IM(
 
 if __name__ == "__main__":
     rules = [
-        NotCoExistenceRule("q", "t"),
-        RespondedExistenceRule("r", "e"),
-        NotCoExistenceRule("b", "t"),
-        NotCoExistenceRule("d", "h"),
-        NotCoExistenceRule("e", "z"),
-        NotCoExistenceRule("d", "y"),
-        AtMostOnceRule("y"),
+        PrecedenceRule("ER Triage", "Release B"),
+        NotCoExistenceRule("IV Liquid", "Release B"),
+        PrecedenceRule("Leucocytes", "Release C"),
+        NotCoExistenceRule("Release A", "Release B"),
+        RespondedExistenceRule("LacticAcid", "IV Liquid"),
+        PrecedenceRule("Leucocytes", "IV Liquid"),
+        NotCoExistenceRule("Release A", "Release D"),
+        PrecedenceRule("CRP", "Release D"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_472.xes", variant="iterparse")
-    log["time:timestamp"] = pd.to_datetime(
-        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
-    )
-    log = pm4py.convert_to_dataframe(log)
+    log = pm4py.read_xes("./evaluation/data/SEPSIS.xes", variant="iterparse")
+    # log["time:timestamp"] = pd.to_datetime(
+    #    log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
+    # )
+    # log = pm4py.convert_to_dataframe(log)
 
     log_org = log.copy()
     log = preprocess_log(log)
 
     # rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
-    print(f"Rules are: {rules}")
     model = apply_IM_with_rules(
-        log=log, rules=rules, repair_mode=RepairVariant.EditDistance
+        log=log,
+        rules=rules,
+        repair_mode=RepairVariant.EditDistance,
+        noise_threshold=0.75,
     )
     model = normalize_tree(model)
     print(f"Final model is: {model}")

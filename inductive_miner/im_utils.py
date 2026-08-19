@@ -166,7 +166,6 @@ def base_cases(
 ):
     nodes = set(dfg_graph.nodes)
     rules = rules or []
-
     if not nodes:
         # The candidate base case is tau / the empty trace.
         unsat_rules = {
@@ -218,6 +217,7 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
                 target = r.target_activity
                 if target != activity:
                     unsat_rules.append(r)
+
         if unsat_rules:
             return set(unsat_rules)
         else:
@@ -226,14 +226,15 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
     has_empty_trace = [] in log
     if has_empty_trace and rules:
         group_0 = set()
-        group_1 = set(activity)
+        group_1 = {activity}
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
+
         if unsat_rules:
             return unsat_rules
 
         return _build_loop_tree(do_first=None, redo=activity)
     elif rules:
-        group_0 = set(activity)
+        group_0 = {activity}
         group_1 = set()
         unsat_rules = LoopCut.check_rules(rules, [group_0, group_1])
 
