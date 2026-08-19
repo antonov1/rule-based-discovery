@@ -19,7 +19,7 @@ from inductive_miner.main import (
 )
 from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment
-from metrics.precision import precision_alignments_ebi
+from metrics.precision import precision_alignments_ebi_rust
 from metrics.rule_conformance import conformance
 from pm4py.algo.simulation.playout.process_tree.algorithm import (
     apply as playout_process_tree,
@@ -141,7 +141,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             model_prepruned = normalize_tree(apply_IM(log_org))
             len(get_non_tau_leaves(model_prepruned))
             fitness_prepruned = fitness_alignment(log, model_prepruned)
-            precision_prepruned = precision_alignments_ebi(
+            precision_prepruned = precision_alignments_ebi_rust(
                 log,
                 model_prepruned,
             )
@@ -163,7 +163,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
                 )
             )
             fitness_trace = fitness_alignment(log, model_trace)
-            precision_trace = precision_alignments_ebi(log, model_trace)
+            precision_trace = precision_alignments_ebi_rust(log, model_trace)
             conformance_trace = conformance(
                 model_trace,
                 sampled_rules,
@@ -183,7 +183,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             )
 
             fitness_event = fitness_alignment(log, model_event)
-            precision_event = precision_alignments_ebi(log, model_event)
+            precision_event = precision_alignments_ebi_rust(log, model_event)
             conformance_event = conformance(
                 model_event,
                 sampled_rules,
@@ -203,7 +203,7 @@ def evaluate_trial(current_idx: int, initial_seed: int = 42) -> dict | None:
             )
 
             fitness_edit = fitness_alignment(log, model_edit)
-            precision_edit = precision_alignments_ebi(log, model_edit)
+            precision_edit = precision_alignments_ebi_rust(log, model_edit)
             conformance_edit = conformance(
                 model_edit,
                 sampled_rules,
@@ -406,7 +406,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_prepruned,
                 )
-                precision_prepruned = precision_alignments_ebi(
+                precision_prepruned = precision_alignments_ebi_rust(
                     log,
                     model_prepruned,
                 )
@@ -453,7 +453,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_norepair,
                 )
-                precision_norepair = precision_alignments_ebi(
+                precision_norepair = precision_alignments_ebi_rust(
                     log,
                     model_norepair,
                 )
@@ -492,7 +492,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_trace,
                 )
-                precision_trace = precision_alignments_ebi(
+                precision_trace = precision_alignments_ebi_rust(
                     log,
                     model_trace,
                 )
@@ -534,7 +534,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_event,
                 )
-                precision_event = precision_alignments_ebi(
+                precision_event = precision_alignments_ebi_rust(
                     log,
                     model_event,
                 )
@@ -578,7 +578,7 @@ def evaluate_dataset(ids: List[str]):
                     log,
                     model_edit,
                 )
-                precision_edit = precision_alignments_ebi(
+                precision_edit = precision_alignments_ebi_rust(
                     log,
                     model_edit,
                 )
