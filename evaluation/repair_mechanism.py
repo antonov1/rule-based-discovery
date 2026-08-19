@@ -609,6 +609,21 @@ def evaluate_dataset(ids: List[str]):
         except Exception:
             traceback.print_exc()
             continue
+        print(f"NOREPAIR: {model_norepair}", flush=True)
+        print(f"TRACE:    {model_trace}", flush=True)
+        print(f"EVENT:    {model_event}", flush=True)
+        print(f"EDIT:     {model_edit}", flush=True)
+
+        print(
+            "models equal:",
+            str(model_norepair) == str(model_trace),
+            str(model_norepair) == str(model_event),
+            str(model_norepair) == str(model_edit),
+            str(model_trace) == str(model_event),
+            str(model_trace) == str(model_edit),
+            flush=True,
+        )
+        input("...")
 
         row = {
             "trial": eval_id,
