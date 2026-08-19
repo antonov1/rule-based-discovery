@@ -527,10 +527,10 @@ def evaluate_logs(
 
 if __name__ == "__main__":
     log_paths = [
-        "./evaluation/data/BPIC2012.xes",
-        "./evaluation/data/BPIC2017.xes",
         "./evaluation/data/SEPSIS.xes",
         "./evaluation/data/RTMF.xes",
+        "./evaluation/data/BPIC2012.xes",
+        "./evaluation/data/BPIC2017.xes",
     ]
 
     parameter_settings = [
