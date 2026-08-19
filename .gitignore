@@ -257,3 +257,4 @@ __pycache__/
 /experiments/*
 /evaluation/declare_dataset/
 /evaluation/data/
+ebi_precision

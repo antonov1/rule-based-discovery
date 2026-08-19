@@ -1,8 +1,9 @@
 import os
+import subprocess
 import tempfile
 
-import ebi
 import pm4py
+import powl
 from pm4py.objects.conversion.log import converter as log_converter
 from pm4py.objects.petri_net.obj import Marking, PetriNet
 from pm4py.objects.process_tree.obj import ProcessTree
@@ -26,51 +27,53 @@ def precision_token_based_pnet(log, net: PetriNet, im: Marking, fm: Marking):
     return pm4py.conformance.precision_token_based_replay(log, net, im, fm)
 
 
-def precision_alignments_ebi(log, model: ProcessTree) -> float:
-    event_log = log_converter.apply(
-        log,
-        variant=log_converter.Variants.TO_EVENT_LOG,
-    )
+def precision_alignments_ebi_rust(
+    log,
+    model: ProcessTree,
+    binary="./ebi_precision/target/release/ebi_precision",
+):
+    net, _, _ = pm4py.convert_to_petri_net(model)
+    powl_model = powl.convert_from_workflow_net(net)
 
-    model_path = None
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        log_path = os.path.join(tmp_dir, "log.xes")
+        model_path = os.path.join(tmp_dir, "model.powl")
+        sali_path = os.path.join(tmp_dir, "alignments.sali")
+        precision_path = os.path.join(tmp_dir, "precision.txt")
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            suffix=".ptml",
-            delete=False,
-        ) as tmp:
-            model_path = tmp.name
+        pm4py.write_xes(
+            log,
+            log_path,
+        )
 
-        pm4py.write_ptml(
-            model,
+        powl.write_powl_json(
+            powl_model,
             model_path,
+        )
+
+        subprocess.run(
+            [
+                binary,
+                log_path,
+                model_path,
+                sali_path,
+                precision_path,
+            ],
+            check=True,
         )
 
         with open(
-            model_path,
+            precision_path,
             "r",
             encoding="utf-8",
         ) as file:
-            model_string = file.read()
+            precision = file.read().strip()
 
-        alignments = ebi.conformance_non_stochastic_alignments(
-            event_log,
-            model_string,
-        )
-
-        precision = ebi.conformance_non_stochastic_escaping_edges_precision(
-            alignments,
-            model_string,
-        )
-
-        if isinstance(precision, (list, tuple)):
-            precision = precision[0]
+        if "/" in precision:
+            numerator, denominator = precision.split("/", 1)
+            return float(numerator) / float(denominator)
 
         return float(precision)
-
-    finally:
-        if model_path is not None and os.path.exists(model_path):
-            os.remove(model_path)
 
 
 if __name__ == "__main__":
@@ -90,7 +93,7 @@ if __name__ == "__main__":
     print("Model:")
     print(model)
 
-    precision = precision_alignments_ebi(
+    precision = precision_alignments_ebi_rust(
         dataframe,
         model,
     )
