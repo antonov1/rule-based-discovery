@@ -528,7 +528,8 @@ def evaluate_logs(
 
 if __name__ == "__main__":
     log_paths = [
-        "./evaluation/data/RTMF.xes",
+        "./evaluation/data/RTFM.xes",
+        "./evaluation/data/HB.xes",
         "./evaluation/data/SEPSIS.xes",
         "./evaluation/data/BPIC2012.xes",
         "./evaluation/data/BPIC2017.xes",
@@ -543,5 +544,5 @@ if __name__ == "__main__":
     evaluate_logs(
         log_paths=log_paths,
         parameter_settings=parameter_settings,
-        timeout_seconds=900,
+        timeout_seconds=1260,
     )

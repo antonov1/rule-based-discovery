@@ -555,7 +555,7 @@ if __name__ == "__main__":
         log=log,
         rules=rules,
         repair_mode=RepairVariant.EditDistance,
-        noise_threshold=0.75,
+        noise_threshold=0,
     )
     model = normalize_tree(model)
     print(f"Final model is: {model}")
