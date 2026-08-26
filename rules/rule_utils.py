@@ -423,67 +423,113 @@ def resolve_circularities(
 
 
 def preprocess_rule_set(
-    rules: List[AbstractRule], log: List[str]
-) -> Tuple[List[AbstractRule], List[str]]:
+    rules: List[AbstractRule], log: List[List[str]]
+) -> Tuple[List[AbstractRule], List[List[str]]]:
     """
-    Identifies parts of the rule set that are optional/should be removed
-    and modifies the list of rules and event log accordingly
+    Simplifies the rule set before discovery and removes activities that
+    are implied to be absent by the declarative specification.
     """
+
     alphabet = {e for trace in log for e in trace}
+
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
-    product = product_automaton(rules, alphabet, automata_by_rule)
-    if not len(product.final_states):
+
+    product = product_automaton(
+        rules,
+        alphabet,
+        automata_by_rule,
+    )
+
+    if not product.final_states:
         raise Exception(
-            f"Product automaton is empty, the set of rules is unsatisfiable."
+            "Product automaton is empty, the set of rules is unsatisfiable."
         )
 
     rules_to_remove = []
     rules_to_add = []
-    # First, merge patterns from type NotSuccession(a,b) \land NotSuccession(b,a) into NotCoExistence(a,b)
+
+    # NotSuccession(a,b) ∧ NotSuccession(b,a) => NotCoExistence(a,b)
     not_succession_rules = [r for r in rules if isinstance(r, NotSuccessionRule)]
+
     for i in range(len(not_succession_rules) - 1):
         for j in range(i + 1, len(not_succession_rules)):
             rule_i = not_succession_rules[i]
             rule_j = not_succession_rules[j]
+
             a_i, b_i = rule_i.activity_a, rule_i.activity_b
             a_j, b_j = rule_j.activity_a, rule_j.activity_b
-            if (a_i == b_j) and (a_j == b_i):
+
+            if a_i == b_j and a_j == b_i:
                 rules_to_remove.extend([rule_i, rule_j])
                 rules_to_add.append(NotCoExistenceRule(a_i, b_i))
+
     remaining_rules = [r for r in rules if r not in rules_to_remove]
     remaining_rules.extend(rules_to_add)
-    existence = {r.target_activity for r in rules if isinstance(r, ExistenceRule)}
 
-    conflicts = {
+    # Existence(a) ∧ NotCoExistence(a,b) => Absence(b)
+    existence = {
+        r.target_activity for r in remaining_rules if isinstance(r, ExistenceRule)
+    }
+
+    forced_absence = {
         r.activity_b if r.activity_a in existence else r.activity_a
         for r in remaining_rules
         if isinstance(r, NotCoExistenceRule)
         and (r.activity_a in existence or r.activity_b in existence)
     }
-    rules_to_remove.extend(
-        [
-            r
-            for r in remaining_rules
-            if isinstance(r, NotCoExistenceRule)
+
+    # Remove the now-redundant NotCoExistence constraints
+    remaining_rules = [
+        r
+        for r in remaining_rules
+        if not (
+            isinstance(r, NotCoExistenceRule)
             and (r.activity_a in existence or r.activity_b in existence)
-        ]
-    )
-    remaining_rules = [r for r in remaining_rules if r not in rules_to_remove]
-    # Check for circularities, e.g., Response(a,b) \land Response(b,a) or Precedence(a,b) \land Precedence(b,a) (remove the rules, remove depending constraints, remove acts from the log)
+        )
+    ]
+
+    # Circular Response / Precedence dependencies
     circularities = __identify_circularities(remaining_rules)
-    conflicts = conflicts | circularities
 
-    if conflicts:
-        conflicts = conflicts | circularities
+    forced_absence |= circularities
 
-        remaining_rules = resolve_circularities(conflicts, remaining_rules)
-    # Preprocess the log
-    print(f"The remaining rules are: {rules}, conflicts are: {conflicts}")
-    modified_log = []
-    for trace in log:
-        new_trace = [e for e in trace if e not in conflicts]
-        modified_log.append(new_trace)
-    log = modified_log
-    # In the end, get rid of redundant activities using the hierarchy
-    # And the automaton-based redundancy check
-    return minimize_rule_set(reduce_rule_hierarchies(remaining_rules), log), log
+    if forced_absence:
+        remaining_rules = resolve_circularities(
+            forced_absence,
+            remaining_rules,
+        )
+
+    modified_log = [[e for e in trace if e not in forced_absence] for trace in log]
+
+    end_activities = {
+        r.target_activity for r in remaining_rules if isinstance(r, EndRule)
+    }
+
+    init_activities = {
+        r.target_activity for r in remaining_rules if isinstance(r, InitializationRule)
+    }
+
+    for rule in remaining_rules:
+
+        if isinstance(rule, PrecedenceRule):
+            a = rule.activity_a
+            b = rule.activity_b
+
+            if a in end_activities:
+                forced_absence.add(b)
+
+        elif isinstance(rule, ResponseRule):
+            a = rule.activity_a
+            b = rule.activity_b
+
+            if b in init_activities:
+                forced_absence.add(a)
+
+    if forced_absence:
+        remaining_rules = resolve_circularities(
+            forced_absence,
+            remaining_rules,
+        )
+
+    modified_log = [[e for e in trace if e not in forced_absence] for trace in log]
+    return remaining_rules, modified_log

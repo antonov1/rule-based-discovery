@@ -7,6 +7,7 @@ from pm4py.algo.simulation.playout.petri_net.algorithm import (
     apply as playout_apply,
     Variants as PlayoutVariants,
 )
+from pm4py.objects.bpmn.obj import BPMN
 from pm4py.objects.process_tree.obj import ProcessTree
 from pm4py.objects.transition_system.obj import TransitionSystem
 from rules import AbstractRule
@@ -53,7 +54,9 @@ def weighted_conformance(
     return 1 - sum(sup_unsat) / len(rules) * max(sup_all), unsat_rules
 
 
-def conformance(model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str]):
+def conformance(
+    model: ProcessTree | BPMN, rules: List[AbstractRule], alphabet: Set[str]
+):
     if not len(rules):
         return 1
     ts = pm4py.convert.convert_to_reachability_graph(model)

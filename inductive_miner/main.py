@@ -31,7 +31,7 @@ from metrics.rule_conformance import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -305,7 +305,7 @@ def apply_IM_with_rules(
     # --- ATTEMPT REPAIR --- #
     if applicable_but_rejected_cuts:
         # trigger the repair mechanism
-        first_rejected_op, unsat_rules = (
+        _, unsat_rules = (
             applicable_but_rejected_cuts[0]["cut"],
             applicable_but_rejected_cuts[0]["unsat_rules"],
         )
@@ -351,6 +351,8 @@ def apply_IM_with_rules(
 
     if flower is None:
         # Kept only for naive repair mechanism
+        print(f"What we expected to satisfy: {rules}, what the log is like: {log[:10]}")
+        raise ValueError("d")
         return ProcessTree()
 
     return mine_decomposition(
@@ -531,30 +533,33 @@ def apply_IM(
 
 if __name__ == "__main__":
     rules = [
-        PrecedenceRule("ER Triage", "Release B"),
-        NotCoExistenceRule("IV Liquid", "Release B"),
-        PrecedenceRule("Leucocytes", "Release C"),
-        NotCoExistenceRule("Release A", "Release B"),
-        RespondedExistenceRule("LacticAcid", "IV Liquid"),
-        PrecedenceRule("Leucocytes", "IV Liquid"),
-        NotCoExistenceRule("Release A", "Release D"),
-        PrecedenceRule("CRP", "Release D"),
+        NotCoExistenceRule("l", "o"),
+        ResponseRule("g", "a"),
+        ResponseRule("b", "a"),
+        NotSuccessionRule("n", "j"),
+        AtMostOnceRule("c"),
+        PrecedenceRule("f", "g"),
+        RespondedExistenceRule("m", "o"),
+        PrecedenceRule("h", "l"),
+        ResponseRule("l", "h"),
     ]
-    log = pm4py.read_xes("./evaluation/data/SEPSIS.xes", variant="iterparse")
-    # log["time:timestamp"] = pd.to_datetime(
-    #    log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
-    # )
-    # log = pm4py.convert_to_dataframe(log)
+    log = pm4py.read_xes("./inductive_miner/log_885.xes", variant="iterparse")
+    log["time:timestamp"] = pd.to_datetime(
+        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
+    )
+    log = pm4py.convert_to_dataframe(log)
 
     log_org = log.copy()
-    log = preprocess_log(log)
 
-    # rules, log = preprocess_rule_set(rules, log)
+    log = preprocess_log(log)
+    rules = [NotCoExistenceRule("B", "C"), ExistenceRule("C"), ResponseRule("A", "B")]
+    log = [["A", "C", "B"], ["A", "B", "C"]]
+    rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
     model = apply_IM_with_rules(
         log=log,
         rules=rules,
-        repair_mode=RepairVariant.EditDistance,
+        repair_mode=RepairVariant.Naive,
         noise_threshold=0,
     )
     model = normalize_tree(model)

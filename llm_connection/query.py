@@ -122,7 +122,9 @@ def code_extraction(code_snippet: str, activities=None):
         raise ValueError(
             "Code snippet is not properly formatted with ```python ... ```"
         )
-    if has_imports(match.group(1)):
+    code = match.group(1).strip()
+    code = sanitize_activity_literals(code, activities)
+    if has_imports(code):
         raise ValueError("Code snippet should not contain any import statements!")
     namespace = {
         "AtMostOnce": AtMostOnceRule,
@@ -139,7 +141,6 @@ def code_extraction(code_snippet: str, activities=None):
         "ChainResponse": ChainResponseRule,
         "ChainPrecedence": ChainPrecedenceRule,
     }
-    code = match.group(1).strip()
     print(f"Extracted code snippet:\n{code}")
     # remove all leading indentation from the code
     code = process_code(code, activities=activities)
@@ -153,6 +154,31 @@ def code_extraction(code_snippet: str, activities=None):
 def has_imports(code: str):
     tree = ast.parse(code)
     return any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in tree.body)
+
+
+def sanitize_activity_literals(code: str, activities=None) -> str:
+    if not activities:
+        return code
+
+    for activity in sorted(activities, key=len, reverse=True):
+        safe = repr(activity)
+
+        # Normal correctly quoted variants.
+        candidates = {
+            f"'{activity}'",
+            f'"{activity}"',
+        }
+
+        # Common LLM mistake for apostrophes:
+        # B'D -> 'B'D'' or similar broken single-quote representation.
+        if "'" in activity:
+            candidates.add("'" + activity + "''")
+
+        for candidate in candidates:
+            if candidate != safe:
+                code = code.replace(candidate, safe)
+
+    return code
 
 
 def process_code(code, activities=None):
@@ -217,9 +243,9 @@ if __name__ == "__main__":
 
     code = textwrap.dedent("""
     ```python
-    r1 = ChainResponse('A', 'B')
+    r1 = ChainResponse('A', 'B'D'')
     r2 = Initialization('A')
     ```""")
-    _, rules = code_extraction(code, ["A", "B"])
+    _, rules = code_extraction(code, ["A", "B'D"])
     for r in rules:
         print(r)

@@ -1830,10 +1830,10 @@ wheels = [
 
 [[package]]
 name = "pm4py"
-version = "2.7.19.8"
+version = "2.7.23.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cvxopt", marker = "python_full_version < '3.14'" },
+    { name = "cvxopt", marker = "python_full_version < '3.15'" },
     { name = "graphviz" },
     { name = "lxml" },
     { name = "matplotlib" },
@@ -1846,9 +1846,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "wheel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/4b/7b6d6651b29f0e0a32b2cd4fb7cffad039b917688a4303cbd544c5f2d22a/pm4py-2.7.19.8.tar.gz", hash = "sha256:868b9788992f8ff44c7621298df9112a61812ae0d310ff5357ea8fa1c8f36165", size = 1013044, upload-time = "2026-02-04T12:24:53.817Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/97/a2bda19eaf9473fe19bca93f4fe5e2ddaecc45c8ed2587d33233b9602bcb/pm4py-2.7.23.6.tar.gz", hash = "sha256:79a5fcf15d3cca0948b281cfcd83e134d6cdf5f560271c6e4c1f69ee9da4c7a4", size = 1183600, upload-time = "2026-08-18T10:18:29.484Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/48/6301796cf181f41da68e4668d33eeccc28586ce8991627d14eb760af110b/pm4py-2.7.19.8-py3-none-any.whl", hash = "sha256:bca7534240d73debcc9893212a5ad39677b00668e94efaaefab0bb442877887f", size = 2393388, upload-time = "2026-02-04T12:24:50.994Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/a4/b53fb27273d0ab7a0d9b5c2499b07cd80bbf8d7975bd2ef923cf3519f607/pm4py-2.7.23.6-py3-none-any.whl", hash = "sha256:69e483118235153cb7013766eceaacfbe6c92e462cf9385bcd4823b577cde0ef", size = 2665372, upload-time = "2026-08-18T10:18:23.37Z" },
 ]
 
 [[package]]
@@ -2582,9 +2582,9 @@ requires-dist = [
     { name = "mlxtend", specifier = ">=0.24.0" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "pandas", specifier = ">=1.4.0" },
-    { name = "pm4py", specifier = ">=2.7.19.8" },
+    { name = "pm4py", specifier = "==2.7.23.6" },
     { name = "powl", specifier = ">=2.3.7" },
-    { name = "promoai", specifier = ">=2.2.1" },
+    { name = "promoai", specifier = "==2.2.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pyvis", specifier = ">=0.3.2" },
     { name = "rustxes", specifier = ">=0.2.11" },

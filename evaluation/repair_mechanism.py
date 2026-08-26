@@ -18,7 +18,7 @@ from inductive_miner.main import (
     preprocess_log as simplify_log,
 )
 from llm_connection.query import code_extraction
-from metrics.fitness import fitness_alignment
+from metrics.fitness import fitness_alignment, fitness_alignment_pm4py
 from metrics.precision import precision_alignments_ebi_rust
 from metrics.rule_conformance import conformance
 from pm4py.algo.simulation.playout.process_tree.algorithm import (
@@ -686,8 +686,192 @@ def evaluate_dataset(ids: List[str]):
     return results
 
 
+def evaluate_split_miner(
+    results_path: str = "./experiments/repair_mechanism/results_0.csv",
+):
+    base_dir = "./experiments/repair_mechanism"
+    models_dir = f"{base_dir}/models"
+
+    os.makedirs(models_dir, exist_ok=True)
+
+    results = pd.read_csv(results_path)
+
+    if "trial" not in results.columns:
+        raise ValueError(f"'trial' column missing from {results_path}")
+
+    # Create columns if they do not exist yet. This also lets the function
+    # resume after an interrupted run.
+    sm_columns = [
+        "SM_acts",
+        "SM_Fitness",
+        "SM_Precision",
+        "SM_F1",
+        "SM_Conformance",
+        "Time_SM",
+    ]
+
+    for column in sm_columns:
+        if column not in results.columns:
+            results[column] = pd.NA
+
+    for row_idx, result_row in results.iterrows():
+        eval_id = result_row["trial"]
+
+        # CSV sometimes converts integer IDs to floats.
+        if isinstance(eval_id, float) and eval_id.is_integer():
+            eval_id = int(eval_id)
+
+        # Skip trials for which Split Miner has already been evaluated.
+        if pd.notna(result_row["SM_Fitness"]):
+            print(
+                f"Trial {eval_id}: Split Miner already evaluated, skipping",
+                flush=True,
+            )
+            continue
+
+        print(
+            f"Trial {eval_id}: evaluating Split Miner",
+            flush=True,
+        )
+
+        try:
+            log = pm4py.read_xes(f"{base_dir}/logs/log_{eval_id}.xes")
+
+            log = log_converter.apply(
+                log,
+                variant=log_converter.Variants.TO_DATA_FRAME,
+            )
+
+            log["time:timestamp"] = pd.to_datetime(log["time:timestamp"])
+
+            alphabet = set(log["concept:name"].unique())
+
+            # Load exactly the same sampled rules that were used for the
+            # corresponding RIM/pre-pruning experiment.
+            with open(
+                f"{base_dir}/rules_sampled_{eval_id}.txt",
+                "r",
+                encoding="utf-8",
+            ) as file:
+                code = file.read()
+
+            lines = []
+
+            for line_number, line in enumerate(
+                code.splitlines(),
+                start=1,
+            ):
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                lines.append(f"r{line_number} = {line}")
+
+            code = "\n".join(lines)
+            code = re.sub(r"\(\s*", "('", code)
+            code = re.sub(r"\s*,\s*", "', '", code)
+            code = re.sub(r"\s*\)", "')", code)
+            code = f"```python\n{code}\n```"
+
+            _, sampled_rules = code_extraction(
+                code,
+                activities=list(alphabet),
+            )
+
+            if not sampled_rules:
+                print(
+                    f"Trial {eval_id}: no rules found, skipping",
+                    flush=True,
+                )
+                continue
+
+            with time_limit(600):
+                start_time = time.perf_counter()
+
+                # Split Miner returns BPMN.
+                bpmn = pm4py.discover_bpmn_split_miner(log)
+
+                # Convert it so the same metrics can be used.
+                net, im, fm = pm4py.convert_to_petri_net(bpmn)
+
+                time_sm = time.perf_counter() - start_time
+
+                fitness_sm = fitness_alignment_pm4py(
+                    log,
+                    (net, im, fm),
+                )
+
+                precision_sm = precision_alignments_ebi_rust(
+                    log,
+                    (net, im, fm),
+                )
+
+                if fitness_sm + precision_sm == 0:
+                    f1_sm = 0.0
+                else:
+                    f1_sm = 2 * fitness_sm * precision_sm / (fitness_sm + precision_sm)
+
+                conformance_sm = conformance(
+                    (net, im, fm),
+                    sampled_rules,
+                    alphabet,
+                )
+
+                # Depending on what get_non_tau_leaves expects, it cannot
+                # operate on a Petri net. Count visible transitions instead.
+                sm_acts = len(
+                    {
+                        transition.label
+                        for transition in net.transitions
+                        if transition.label is not None
+                    }
+                )
+
+            results.at[row_idx, "SM_acts"] = sm_acts
+            results.at[row_idx, "SM_Fitness"] = fitness_sm
+            results.at[row_idx, "SM_Precision"] = precision_sm
+            results.at[row_idx, "SM_F1"] = f1_sm
+            results.at[row_idx, "SM_Conformance"] = conformance_sm[0]
+            results.at[row_idx, "Time_SM"] = time_sm
+
+            # Persist after every successful model so the experiment is
+            # resumable.
+            results.to_csv(
+                results_path,
+                index=False,
+            )
+
+            print(
+                f"Trial {eval_id}: Split Miner completed",
+                flush=True,
+            )
+
+        except TimeoutException:
+            print(
+                f"Trial {eval_id}: Split Miner timed out",
+                flush=True,
+            )
+            continue
+
+        except Exception:
+            print(
+                f"Trial {eval_id}: Split Miner failed",
+                flush=True,
+            )
+            traceback.print_exc()
+            continue
+
+    results.to_csv(
+        results_path,
+        index=False,
+    )
+
+    return results
+
+
 if __name__ == "__main__":
     base_dir = "./experiments/repair_mechanism"
     # original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
     ids = [i for i in range(1, 1000)]
-    evaluate_dataset(ids)
+    evaluate_split_miner()
