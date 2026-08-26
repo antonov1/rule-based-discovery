@@ -19,7 +19,10 @@ from inductive_miner.main import (
 )
 from llm_connection.query import code_extraction
 from metrics.fitness import fitness_alignment, fitness_alignment_pm4py
-from metrics.precision import precision_alignments_ebi_rust
+from metrics.precision import (
+    precision_alignments_ebi_rust,
+    precision_alignments_ebi_rust_sm,
+)
 from metrics.rule_conformance import conformance
 from pm4py.algo.simulation.playout.process_tree.algorithm import (
     apply as playout_process_tree,
@@ -688,41 +691,34 @@ def evaluate_dataset(ids: List[str]):
 
 def evaluate_split_miner(
     results_path: str = "./experiments/repair_mechanism/results_0.csv",
+    sm_results_path: str = "./experiments/repair_mechanism/results_sm.csv",
 ):
     base_dir = "./experiments/repair_mechanism"
     models_dir = f"{base_dir}/models"
 
     os.makedirs(models_dir, exist_ok=True)
 
-    results = pd.read_csv(results_path)
+    # Original results determine which trials to evaluate.
+    original_results = pd.read_csv(results_path)
 
-    if "trial" not in results.columns:
+    if "trial" not in original_results.columns:
         raise ValueError(f"'trial' column missing from {results_path}")
 
-    # Create columns if they do not exist yet. This also lets the function
-    # resume after an interrupted run.
-    sm_columns = [
-        "SM_acts",
-        "SM_Fitness",
-        "SM_Precision",
-        "SM_F1",
-        "SM_Conformance",
-        "Time_SM",
-    ]
+    # Load previous Split Miner results so the evaluation is resumable.
+    if os.path.exists(sm_results_path):
+        sm_results = pd.read_csv(sm_results_path)
+        completed_ids = set(sm_results["trial"].astype(str))
+    else:
+        sm_results = pd.DataFrame()
+        completed_ids = set()
 
-    for column in sm_columns:
-        if column not in results.columns:
-            results[column] = pd.NA
-
-    for row_idx, result_row in results.iterrows():
+    for _, result_row in original_results.iterrows():
         eval_id = result_row["trial"]
 
-        # CSV sometimes converts integer IDs to floats.
         if isinstance(eval_id, float) and eval_id.is_integer():
             eval_id = int(eval_id)
 
-        # Skip trials for which Split Miner has already been evaluated.
-        if pd.notna(result_row["SM_Fitness"]):
+        if str(eval_id) in completed_ids:
             print(
                 f"Trial {eval_id}: Split Miner already evaluated, skipping",
                 flush=True,
@@ -746,8 +742,7 @@ def evaluate_split_miner(
 
             alphabet = set(log["concept:name"].unique())
 
-            # Load exactly the same sampled rules that were used for the
-            # corresponding RIM/pre-pruning experiment.
+            # Load the same sampled rules.
             with open(
                 f"{base_dir}/rules_sampled_{eval_id}.txt",
                 "r",
@@ -789,20 +784,35 @@ def evaluate_split_miner(
             with time_limit(600):
                 start_time = time.perf_counter()
 
-                # Split Miner returns BPMN.
+                # Discover Split Miner BPMN.
                 bpmn = pm4py.discover_bpmn_split_miner(log)
 
-                # Convert it so the same metrics can be used.
+                pm4py.write_bpmn(
+                    bpmn,
+                    f"{models_dir}/{eval_id}_sm.bpmn",
+                )
+
+                # Convert BPMN to Petri net.
                 net, im, fm = pm4py.convert_to_petri_net(bpmn)
+
+                # Also persist the Petri net.
+                pm4py.write_pnml(
+                    net,
+                    im,
+                    f"{models_dir}/{eval_id}_sm.pnml",
+                    final_marking=fm,
+                )
 
                 time_sm = time.perf_counter() - start_time
 
                 fitness_sm = fitness_alignment_pm4py(
                     log,
-                    (net, im, fm),
+                    net,
+                    im,
+                    fm,
                 )
 
-                precision_sm = precision_alignments_ebi_rust(
+                precision_sm = precision_alignments_ebi_rust_sm(
                     log,
                     (net, im, fm),
                 )
@@ -813,13 +823,11 @@ def evaluate_split_miner(
                     f1_sm = 2 * fitness_sm * precision_sm / (fitness_sm + precision_sm)
 
                 conformance_sm = conformance(
-                    (net, im, fm),
+                    bpmn,
                     sampled_rules,
                     alphabet,
                 )
 
-                # Depending on what get_non_tau_leaves expects, it cannot
-                # operate on a Petri net. Count visible transitions instead.
                 sm_acts = len(
                     {
                         transition.label
@@ -828,17 +836,44 @@ def evaluate_split_miner(
                     }
                 )
 
-            results.at[row_idx, "SM_acts"] = sm_acts
-            results.at[row_idx, "SM_Fitness"] = fitness_sm
-            results.at[row_idx, "SM_Precision"] = precision_sm
-            results.at[row_idx, "SM_F1"] = f1_sm
-            results.at[row_idx, "SM_Conformance"] = conformance_sm[0]
-            results.at[row_idx, "Time_SM"] = time_sm
+            row = {
+                "trial": eval_id,
+                "SM_acts": sm_acts,
+                "SM_Fitness": fitness_sm,
+                "SM_Precision": precision_sm,
+                "SM_F1": f1_sm,
+                "SM_Conformance": conformance_sm[0],
+                "Time_SM": time_sm,
+            }
 
-            # Persist after every successful model so the experiment is
-            # resumable.
-            results.to_csv(
-                results_path,
+            sm_results = pd.concat(
+                [
+                    sm_results,
+                    pd.DataFrame([row]),
+                ],
+                ignore_index=True,
+            )
+
+            completed_ids.add(str(eval_id))
+
+            # Keep the file ordered by trial.
+            sm_results["_trial_sort"] = pd.to_numeric(
+                sm_results["trial"],
+                errors="coerce",
+            )
+
+            sm_results = (
+                sm_results.sort_values(
+                    ["_trial_sort", "trial"],
+                    na_position="last",
+                )
+                .drop(columns="_trial_sort")
+                .reset_index(drop=True)
+            )
+
+            # Save after every successful trial.
+            sm_results.to_csv(
+                sm_results_path,
                 index=False,
             )
 
@@ -862,12 +897,12 @@ def evaluate_split_miner(
             traceback.print_exc()
             continue
 
-    results.to_csv(
-        results_path,
+    sm_results.to_csv(
+        sm_results_path,
         index=False,
     )
 
-    return results
+    return sm_results
 
 
 if __name__ == "__main__":

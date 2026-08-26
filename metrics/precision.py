@@ -32,7 +32,9 @@ def precision_alignments_ebi_rust(
     model: ProcessTree,
     binary="./ebi_precision/target/release/ebi_precision",
 ):
-    net, _, _ = pm4py.convert_to_petri_net(model)
+    net, _, _ = (
+        pm4py.convert_to_petri_net(model) if isinstance(model, ProcessTree) else model
+    )
     powl_model = powl.convert_from_workflow_net(net)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -50,6 +52,59 @@ def precision_alignments_ebi_rust(
             powl_model,
             model_path,
         )
+
+        subprocess.run(
+            [
+                binary,
+                log_path,
+                model_path,
+                sali_path,
+                precision_path,
+            ],
+            check=True,
+        )
+
+        with open(
+            precision_path,
+            "r",
+            encoding="utf-8",
+        ) as file:
+            precision = file.read().strip()
+
+        if "/" in precision:
+            numerator, denominator = precision.split("/", 1)
+            return float(numerator) / float(denominator)
+
+        return float(precision)
+
+
+def precision_alignments_ebi_rust_sm(
+    log,
+    model,
+    binary="./ebi_precision/target/release/ebi_precision",
+):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        log_path = os.path.join(tmp_dir, "log.xes")
+        sali_path = os.path.join(tmp_dir, "alignments.sali")
+        precision_path = os.path.join(tmp_dir, "precision.txt")
+
+        pm4py.write_xes(log, log_path)
+
+        if isinstance(model, ProcessTree):
+            model_path = os.path.join(tmp_dir, "model.ptml")
+            pm4py.write_ptml(model, model_path)
+
+        else:
+            # Expect (net, initial_marking, final_marking)
+            net, im, fm = model
+            model_path = os.path.join(tmp_dir, "model.pnml")
+
+            pm4py.write_pnml(
+                net,
+                im,
+                fm,
+                model_path,
+            )
 
         subprocess.run(
             [

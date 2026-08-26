@@ -9,7 +9,7 @@ def fitness_alignment(log, model: ProcessTree):
 
 
 def fitness_alignment_pm4py(log, net, im, fm):
-    return pm4py.conformance.fitness_alignments(log, net, im, fm)
+    return pm4py.conformance.fitness_alignments(log, net, im, fm)["log_fitness"]
 
 
 def fitness_token_based_tree(log, model: ProcessTree):
