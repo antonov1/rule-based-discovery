@@ -787,11 +787,6 @@ def evaluate_split_miner(
                 # Discover Split Miner BPMN.
                 bpmn = pm4py.discover_bpmn_split_miner(log)
 
-                pm4py.write_bpmn(
-                    bpmn,
-                    f"{models_dir}/{eval_id}_sm.bpmn",
-                )
-
                 # Convert BPMN to Petri net.
                 net, im, fm = pm4py.convert_to_petri_net(bpmn)
 
@@ -799,8 +794,8 @@ def evaluate_split_miner(
                 pm4py.write_pnml(
                     net,
                     im,
+                    fm,
                     f"{models_dir}/{eval_id}_sm.pnml",
-                    final_marking=fm,
                 )
 
                 time_sm = time.perf_counter() - start_time
