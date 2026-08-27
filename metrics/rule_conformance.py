@@ -63,22 +63,26 @@ def conformance(
         return 1.0, []
 
     alphabet = set(alphabet)
-
+    rule_alphabet = set()
     for r in rules:
         if hasattr(r, "target_activity"):
-            alphabet.add(r.target_activity)
+            rule_alphabet.add(r.target_activity)
         if hasattr(r, "activity_a"):
-            alphabet.add(r.activity_a)
+            rule_alphabet.add(r.activity_a)
         if hasattr(r, "activity_b"):
-            alphabet.add(r.activity_b)
+            rule_alphabet.add(r.activity_b)
 
+    other_symbol = "__OTHER__"
+    while other_symbol in rule_alphabet:
+        other_symbol += "_"
     ts = pm4py.convert.convert_to_reachability_graph(model)
-    nfa = transition_system_to_nfa(ts, alphabet=alphabet)
+    nfa_alphabet = rule_alphabet | {other_symbol}
+    nfa = transition_system_to_nfa(ts, alphabet=nfa_alphabet)
 
     unsat_rules = []
 
     for rule in rules:
-        rule_automaton = rule.to_automaton(alphabet=alphabet)
+        rule_automaton = rule.to_automaton(alphabet=nfa_alphabet)
         negated_rule_automaton = NFA.from_dfa(~rule_automaton)
         intersection = nfa.intersection(negated_rule_automaton)
         if intersection.final_states:
@@ -108,12 +112,18 @@ def transition_system_to_nfa(
     initial_state: str = "source1",
     sink_state: str = "sink1",
     epsilon_symbol: str = "",
+    other_symbol: str = "__OTHER__",
 ) -> NFA:
-    # returns an epsilon-NFA that accepts the same language as the transition system
     states = {str(state.name) for state in ts.states}
+
     if sink_state not in states or initial_state not in states:
         raise ValueError("Sink or initial state are not part of states")
+
+    nfa_alphabet = set(alphabet)
+    nfa_alphabet.add(other_symbol)
+
     transitions = {state: {} for state in states}
+
     for edge in ts.transitions:
         source = str(edge.from_state.name)
         target = str(edge.to_state.name)
@@ -124,17 +134,22 @@ def transition_system_to_nfa(
         if target not in states:
             raise ValueError(f"Transition target {target!r} is not in states.")
 
-        symbol = __extract_symbol(edge.name, epsilon_symbol=epsilon_symbol)
+        symbol = __extract_symbol(
+            edge.name,
+            epsilon_symbol=epsilon_symbol,
+        )
 
         if symbol != epsilon_symbol and symbol not in alphabet:
-            raise ValueError(
-                f"Transition label {symbol!r} is not in the provided alphabet {alphabet}."
-            )
+            symbol = other_symbol
 
-        transitions[source].setdefault(symbol, set()).add(target)
+        transitions[source].setdefault(
+            symbol,
+            set(),
+        ).add(target)
+
     return NFA(
         states=states,
-        input_symbols=set(alphabet),
+        input_symbols=nfa_alphabet,
         transitions=transitions,
         initial_state=initial_state,
         final_states={sink_state},
