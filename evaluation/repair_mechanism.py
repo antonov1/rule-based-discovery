@@ -3,6 +3,7 @@ import os
 import random
 import re
 import signal
+import tempfile
 import time
 import traceback
 from contextlib import contextmanager
@@ -689,49 +690,210 @@ def evaluate_dataset(ids: List[str]):
     return results
 
 
+def save_sm_result(sm_results_path: str, row: dict) -> None:
+    """
+    Persist exactly one completed trial.
+
+    The function:
+      1. reads the current CSV from disk,
+      2. replaces/adds this trial,
+      3. writes to a temporary file,
+      4. atomically replaces the real CSV,
+      5. reads the CSV back from disk,
+      6. verifies that the trial is actually present.
+    """
+
+    sm_results_path = os.path.abspath(sm_results_path)
+    os.makedirs(os.path.dirname(sm_results_path), exist_ok=True)
+
+    trial = str(row["trial"])
+
+    # Always reload the current state FROM DISK.
+    if os.path.exists(sm_results_path) and os.path.getsize(sm_results_path) > 0:
+        current = pd.read_csv(sm_results_path)
+    else:
+        current = pd.DataFrame()
+
+    # Remove an older version of this same trial, if present.
+    if not current.empty and "trial" in current.columns:
+        current = current[current["trial"].astype(str) != trial].copy()
+
+    # Add the newly completed trial.
+    current = pd.concat(
+        [current, pd.DataFrame([row])],
+        ignore_index=True,
+    )
+
+    # Sort purely for readability.
+    current["_trial_sort"] = pd.to_numeric(
+        current["trial"],
+        errors="coerce",
+    )
+
+    current = (
+        current.sort_values("_trial_sort", na_position="last")
+        .drop(columns="_trial_sort")
+        .reset_index(drop=True)
+    )
+
+    # Write a complete temporary CSV first.
+    directory = os.path.dirname(sm_results_path)
+
+    fd, tmp_path = tempfile.mkstemp(
+        prefix="results_sm_",
+        suffix=".tmp",
+        dir=directory,
+    )
+    os.close(fd)
+
+    try:
+        current.to_csv(
+            tmp_path,
+            index=False,
+        )
+
+        # Replace the destination only after the temporary file
+        # has been successfully written.
+        os.replace(
+            tmp_path,
+            sm_results_path,
+        )
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    # VERIFY WHAT IS ACTUALLY ON DISK.
+    written = pd.read_csv(sm_results_path)
+
+    written_trials = set(written["trial"].astype(str))
+
+    if trial not in written_trials:
+        raise RuntimeError(
+            f"Trial {trial} was written but could not be "
+            f"found after reopening {sm_results_path}"
+        )
+
+    print(
+        f"Trial {trial}: SAVED TO CSV " f"({len(written)} rows) " f"{sm_results_path}",
+        flush=True,
+    )
+
+
 def evaluate_split_miner(
     results_path: str = "./experiments/repair_mechanism/results_0.csv",
     sm_results_path: str = "./experiments/repair_mechanism/results_sm.csv",
 ):
-    base_dir = "./experiments/repair_mechanism"
-    models_dir = f"{base_dir}/models"
+    base_dir = os.path.abspath("./experiments/repair_mechanism")
 
-    os.makedirs(models_dir, exist_ok=True)
+    models_dir = os.path.join(
+        base_dir,
+        "models",
+    )
 
-    # Original results determine which trials to evaluate.
+    os.makedirs(
+        models_dir,
+        exist_ok=True,
+    )
+
+    results_path = os.path.abspath(results_path)
+    sm_results_path = os.path.abspath(sm_results_path)
+
+    print(
+        f"Input results:  {results_path}",
+        flush=True,
+    )
+
+    print(
+        f"Output results: {sm_results_path}",
+        flush=True,
+    )
+
+    print(
+        f"Models:         {models_dir}",
+        flush=True,
+    )
+
+    # ---------------------------------------------------------
+    # Load trials that should be evaluated.
+    # ---------------------------------------------------------
+
     original_results = pd.read_csv(results_path)
 
     if "trial" not in original_results.columns:
         raise ValueError(f"'trial' column missing from {results_path}")
 
-    # Load previous Split Miner results so the evaluation is resumable.
-    if os.path.exists(sm_results_path):
-        sm_results = pd.read_csv(sm_results_path)
-        completed_ids = set(sm_results["trial"].astype(str))
+    # ---------------------------------------------------------
+    # Determine what is already ACTUALLY ON DISK.
+    # ---------------------------------------------------------
+
+    if os.path.exists(sm_results_path) and os.path.getsize(sm_results_path) > 0:
+        existing_results = pd.read_csv(sm_results_path)
+
+        if "trial" not in existing_results.columns:
+            raise ValueError(f"'trial' column missing from " f"{sm_results_path}")
+
+        completed_ids = set(existing_results["trial"].astype(str))
+
     else:
-        sm_results = pd.DataFrame()
         completed_ids = set()
 
+    print(
+        f"Already completed: {len(completed_ids)} trials",
+        flush=True,
+    )
+
+    # ---------------------------------------------------------
+    # Evaluate every trial.
+    # ---------------------------------------------------------
+
     for _, result_row in original_results.iterrows():
+
         eval_id = result_row["trial"]
 
         if isinstance(eval_id, float) and eval_id.is_integer():
             eval_id = int(eval_id)
 
-        if str(eval_id) in completed_ids:
+        eval_key = str(eval_id)
+
+        # -----------------------------------------------------
+        # Skip trials already present in the CSV on startup.
+        # -----------------------------------------------------
+
+        if eval_key in completed_ids:
             print(
-                f"Trial {eval_id}: Split Miner already evaluated, skipping",
+                f"Trial {eval_id}: already in CSV, skipping",
                 flush=True,
             )
             continue
 
         print(
-            f"Trial {eval_id}: evaluating Split Miner",
+            "",
+            flush=True,
+        )
+
+        print(
+            f"========== TRIAL {eval_id} ==========",
             flush=True,
         )
 
         try:
-            log = pm4py.read_xes(f"{base_dir}/logs/log_{eval_id}.xes")
+            # -------------------------------------------------
+            # Load event log.
+            # -------------------------------------------------
+
+            log_path = os.path.join(
+                base_dir,
+                "logs",
+                f"log_{eval_id}.xes",
+            )
+
+            print(
+                f"Trial {eval_id}: loading {log_path}",
+                flush=True,
+            )
+
+            log = pm4py.read_xes(log_path)
 
             log = log_converter.apply(
                 log,
@@ -742,9 +904,17 @@ def evaluate_split_miner(
 
             alphabet = set(log["concept:name"].unique())
 
-            # Load the same sampled rules.
+            # -------------------------------------------------
+            # Load sampled rules.
+            # -------------------------------------------------
+
+            rules_path = os.path.join(
+                base_dir,
+                f"rules_sampled_{eval_id}.txt",
+            )
+
             with open(
-                f"{base_dir}/rules_sampled_{eval_id}.txt",
+                rules_path,
                 "r",
                 encoding="utf-8",
             ) as file:
@@ -764,10 +934,26 @@ def evaluate_split_miner(
                 lines.append(f"r{line_number} = {line}")
 
             code = "\n".join(lines)
-            code = re.sub(r"\(\s*", "('", code)
-            code = re.sub(r"\s*,\s*", "', '", code)
-            code = re.sub(r"\s*\)", "')", code)
-            code = f"```python\n{code}\n```"
+
+            code = re.sub(
+                r"\(\s*",
+                "('",
+                code,
+            )
+
+            code = re.sub(
+                r"\s*,\s*",
+                "', '",
+                code,
+            )
+
+            code = re.sub(
+                r"\s*\)",
+                "')",
+                code,
+            )
+
+            code = f"```python\n" f"{code}\n" f"```"
 
             _, sampled_rules = code_extraction(
                 code,
@@ -781,24 +967,60 @@ def evaluate_split_miner(
                 )
                 continue
 
+            # -------------------------------------------------
+            # Run the complete evaluation.
+            # -------------------------------------------------
+
             with time_limit(600):
+
+                print(
+                    f"Trial {eval_id}: discovering Split Miner",
+                    flush=True,
+                )
+
                 start_time = time.perf_counter()
 
-                # Discover Split Miner BPMN.
                 bpmn = pm4py.discover_bpmn_split_miner(log)
 
-                # Convert BPMN to Petri net.
                 net, im, fm = pm4py.convert_to_petri_net(bpmn)
 
-                # Also persist the Petri net.
+                time_sm = time.perf_counter() - start_time
+
+                print(
+                    f"Trial {eval_id}: Split Miner discovery "
+                    f"finished in {time_sm:.3f}s",
+                    flush=True,
+                )
+
+                # -------------------------------------------------
+                # Write model.
+                # -------------------------------------------------
+
+                model_path = os.path.join(
+                    models_dir,
+                    f"{eval_id}_sm.pnml",
+                )
+
                 pm4py.write_pnml(
                     net,
                     im,
                     fm,
-                    f"{models_dir}/{eval_id}_sm.pnml",
+                    model_path,
                 )
 
-                time_sm = time.perf_counter() - start_time
+                print(
+                    f"Trial {eval_id}: model written to " f"{model_path}",
+                    flush=True,
+                )
+
+                # -------------------------------------------------
+                # Fitness.
+                # -------------------------------------------------
+
+                print(
+                    f"Trial {eval_id}: computing fitness",
+                    flush=True,
+                )
 
                 fitness_sm = fitness_alignment_pm4py(
                     log,
@@ -807,21 +1029,62 @@ def evaluate_split_miner(
                     fm,
                 )
 
+                print(
+                    f"Trial {eval_id}: fitness = {fitness_sm}",
+                    flush=True,
+                )
+
+                # -------------------------------------------------
+                # Precision.
+                # -------------------------------------------------
+
+                print(
+                    f"Trial {eval_id}: computing precision",
+                    flush=True,
+                )
+
                 precision_sm = precision_alignments_ebi_rust_sm(
                     log,
                     (net, im, fm),
                 )
+
+                print(
+                    f"Trial {eval_id}: precision = " f"{precision_sm}",
+                    flush=True,
+                )
+
+                # -------------------------------------------------
+                # F1.
+                # -------------------------------------------------
 
                 if fitness_sm + precision_sm == 0:
                     f1_sm = 0.0
                 else:
                     f1_sm = 2 * fitness_sm * precision_sm / (fitness_sm + precision_sm)
 
+                # -------------------------------------------------
+                # Rule conformance.
+                # -------------------------------------------------
+
+                print(
+                    f"Trial {eval_id}: computing conformance",
+                    flush=True,
+                )
+
                 conformance_sm = conformance(
                     bpmn,
                     sampled_rules,
                     alphabet,
                 )
+
+                print(
+                    f"Trial {eval_id}: conformance = " f"{conformance_sm[0]}",
+                    flush=True,
+                )
+
+                # -------------------------------------------------
+                # Number of visible activities.
+                # -------------------------------------------------
 
                 sm_acts = len(
                     {
@@ -830,6 +1093,12 @@ def evaluate_split_miner(
                         if transition.label is not None
                     }
                 )
+
+            # =====================================================
+            # EVERYTHING ABOVE FINISHED.
+            #
+            # Construct exactly one final result row.
+            # =====================================================
 
             row = {
                 "trial": eval_id,
@@ -841,67 +1110,84 @@ def evaluate_split_miner(
                 "Time_SM": time_sm,
             }
 
-            sm_results = pd.concat(
-                [
-                    sm_results,
-                    pd.DataFrame([row]),
-                ],
-                ignore_index=True,
-            )
-
-            completed_ids.add(str(eval_id))
-
-            # Keep the file ordered by trial.
-            sm_results["_trial_sort"] = pd.to_numeric(
-                sm_results["trial"],
-                errors="coerce",
-            )
-
-            sm_results = (
-                sm_results.sort_values(
-                    ["_trial_sort", "trial"],
-                    na_position="last",
-                )
-                .drop(columns="_trial_sort")
-                .reset_index(drop=True)
-            )
-
-            # Save after every successful trial.
-            sm_results.to_csv(
-                sm_results_path,
-                index=False,
+            print(
+                f"Trial {eval_id}: evaluation FINISHED",
+                flush=True,
             )
 
             print(
-                f"Trial {eval_id}: Split Miner completed",
+                f"Trial {eval_id}: result = {row}",
+                flush=True,
+            )
+
+            # =====================================================
+            # WRITE THIS RESULT NOW.
+            #
+            # This function does not return until it has:
+            #
+            #   - written the CSV
+            #   - reopened the CSV
+            #   - verified this trial exists in it
+            # =====================================================
+
+            save_sm_result(
+                sm_results_path,
+                row,
+            )
+
+            # Only mark it completed AFTER save_sm_result
+            # has verified it exists on disk.
+            completed_ids.add(eval_key)
+
+            print(
+                f"Trial {eval_id}: COMPLETE AND VERIFIED",
                 flush=True,
             )
 
         except TimeoutException:
             print(
-                f"Trial {eval_id}: Split Miner timed out",
+                f"Trial {eval_id}: TIMED OUT — NOT WRITTEN",
                 flush=True,
             )
             continue
 
         except Exception:
             print(
-                f"Trial {eval_id}: Split Miner failed",
+                f"Trial {eval_id}: FAILED — NOT WRITTEN",
                 flush=True,
             )
+
             traceback.print_exc()
             continue
 
-    sm_results.to_csv(
-        sm_results_path,
-        index=False,
+    # ---------------------------------------------------------
+    # There is deliberately NO final blind to_csv() here.
+    #
+    # Every successful result was already persisted individually.
+    # ---------------------------------------------------------
+
+    if os.path.exists(sm_results_path) and os.path.getsize(sm_results_path) > 0:
+        final_results = pd.read_csv(sm_results_path)
+    else:
+        final_results = pd.DataFrame()
+
+    print(
+        "",
+        flush=True,
     )
 
-    return sm_results
+    print(
+        f"Finished. CSV contains " f"{len(final_results)} rows:",
+        flush=True,
+    )
+
+    print(
+        sm_results_path,
+        flush=True,
+    )
+
+    return final_results
 
 
 if __name__ == "__main__":
-    base_dir = "./experiments/repair_mechanism"
-    # original_dataset = pd.read_csv(f"{base_dir}/results_0.csv")
-    ids = [i for i in range(1, 1000)]
     evaluate_split_miner()
