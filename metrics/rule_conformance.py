@@ -55,12 +55,16 @@ def weighted_conformance(
 
 
 def conformance(
-    model: ProcessTree | BPMN, rules: List[AbstractRule], alphabet: Set[str]
+    model: ProcessTree | BPMN,
+    rules: List[AbstractRule],
+    alphabet: Set[str],
 ):
-    if not len(rules):
-        return 1
-    ts = pm4py.convert.convert_to_reachability_graph(model)
-    for r in rules or []:
+    if not rules:
+        return 1.0, []
+
+    alphabet = set(alphabet)
+
+    for r in rules:
         if hasattr(r, "target_activity"):
             alphabet.add(r.target_activity)
         if hasattr(r, "activity_a"):
@@ -68,19 +72,19 @@ def conformance(
         if hasattr(r, "activity_b"):
             alphabet.add(r.activity_b)
 
+    ts = pm4py.convert.convert_to_reachability_graph(model)
     nfa = transition_system_to_nfa(ts, alphabet=alphabet)
-    # constructing accept_all automaton
+
     unsat_rules = []
-    accept_all = DFA.universal_language(input_symbols=set(alphabet))
 
     for rule in rules:
         rule_automaton = rule.to_automaton(alphabet=alphabet)
-        # to check, we need to see if the intersection of the model automaton and the negation of the rule automaton is empty
-        negated_rule_automaton = NFA.from_dfa(accept_all.difference(rule_automaton))
+        negated_rule_automaton = NFA.from_dfa(~rule_automaton)
         intersection = nfa.intersection(negated_rule_automaton)
-        if len(intersection.final_states) > 0:
+        if intersection.final_states:
             unsat_rules.append(rule)
-    return 1 - len(unsat_rules) / len(rules), unsat_rules
+
+    return 1.0 - len(unsat_rules) / len(rules), unsat_rules
 
 
 def __extract_symbol(label, epsilon_symbol=""):
