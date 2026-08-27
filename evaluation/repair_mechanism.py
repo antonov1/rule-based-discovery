@@ -848,7 +848,6 @@ def evaluate_split_miner(
     # ---------------------------------------------------------
 
     for _, result_row in original_results.iterrows():
-        input("?//")
         eval_id = result_row["trial"]
 
         if isinstance(eval_id, float) and eval_id.is_integer():
