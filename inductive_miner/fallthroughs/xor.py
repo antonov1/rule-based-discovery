@@ -8,7 +8,9 @@ from inductive_miner.im_utils import RepairVariant
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import (
     AbstractRule,
+    EndRule,
     ExistenceRule,
+    InitializationRule,
     NotCoExistenceRule,
     NotSuccessionRule,
     ResponseRule,
@@ -58,7 +60,9 @@ def forced_by_existence(
     rules: List[AbstractRule],
 ) -> Optional[str]:
     existing = {
-        rule.target_activity for rule in rules if isinstance(rule, ExistenceRule)
+        rule.target_activity
+        for rule in rules
+        if isinstance(rule, (ExistenceRule, InitializationRule, EndRule))
     }
 
     for rule in rules:
@@ -165,7 +169,7 @@ def apply(
             rule
             for rule in rules
             if (
-                isinstance(rule, ExistenceRule)
+                isinstance(rule, (ExistenceRule, EndRule, InitializationRule))
                 and rule.target_activity == forced_activity
             )
         ]

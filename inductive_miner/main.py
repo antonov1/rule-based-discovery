@@ -22,8 +22,8 @@ from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import preprocess_rule_set
 from rules import *
 
-from inductive_miner.im_utils import Decomposition, normalize_tree, RepairVariant
-from metrics.fitness import fitness_token_based_tree
+from inductive_miner.im_utils import Decomposition, RepairVariant
+from metrics.fitness import fitness_alignment
 from metrics.precision import precision_token_based_tree
 from metrics.rule_conformance import (
     conformance as rule_conformance_apply,
@@ -200,7 +200,7 @@ def apply_IM_with_rules(
         cut = cut_class(dfg_graph)
         groups = cut.discover()
         if ENABLE_PRINTS:
-            print(f"Cut {op} discovered with groups {groups}")
+            print(f"Cut {op} discovered with groups {groups} and rules: {rules}")
             print(f"Groups are: {groups}")
 
         if groups is not None:
@@ -541,30 +541,22 @@ if __name__ == "__main__":
         PrecedenceRule("h", "l"),
         ResponseRule("l", "h"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_885.xes", variant="iterparse")
-    log["time:timestamp"] = pd.to_datetime(
-        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
-    )
-    log = pm4py.convert_to_dataframe(log)
-
-    log_org = log.copy()
-
-    log = preprocess_log(log)
-    rules = []
     log = [
-        ["r", "n", "d", "e", "x"],
-        ["n", "v", "d", "e", "x"],
-        ["r", "v", "e", "d", "y"],
-        ["n", "d", "e", "e", "y"],
+        ["d", "h", "v", "e"],
+        ["n", "d", "v", "e"],
+        ["n", "v", "d", "e"],
+        ["n", "d", "e", "v"],
     ]
+    log_org = traces_to_log(log)
     rules = [
-        RespondedExistenceRule("v", "d"),
-        PrecedenceRule("v", "e"),
-        AtMostOnceRule("e"),
         ChainResponseRule("n", "d"),
-        NotCoExistenceRule("x", "y"),
+        PrecedenceRule("v", "e"),
+        NotCoExistenceRule("h", "n"),
     ]
+
     rules, log = preprocess_rule_set(rules, log)
+    for r in rules:
+        log = r.apply(log)
     print(f"Rules are: {rules}")
     model = apply_IM_with_rules(
         log=log,
@@ -572,10 +564,10 @@ if __name__ == "__main__":
         repair_mode=RepairVariant.Naive,
         noise_threshold=0,
     )
-    model = normalize_tree(model)
+    # model = normalize_tree(model)
     print(f"Final model is: {model}")
     pm4py.view_process_tree(model)  # Visualize the process tree
-    fitness = fitness_token_based_tree(log_org, model)
+    fitness = fitness_alignment(log_org, model)
     prec = precision_token_based_tree(log_org, model)
     print(
         f"Fit: {fitness}, prec: {prec}, F1: {2 * fitness * prec / (fitness + prec) if fitness + prec > 0 else 0}"

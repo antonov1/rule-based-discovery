@@ -17,10 +17,8 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
-    ExistenceRule,
     InitializationRule,
     NotCoExistenceRule,
-    NotSuccessionRule,
     PrecedenceRule,
     ResponseRule,
 )
@@ -813,55 +811,49 @@ def apply(
 
 
 if __name__ == "__main__":
-    from rules import ChainResponseRule
+    from rules import ChainResponseRule, NotCoExistenceRule, PrecedenceRule
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
+    # h = High-Flow Start
+    # n = NIV Start
+    # d = Dexamethasone Start
+    # v = Invasive Ventilation Start
+    # e = ECMO Start
+    alphabet = {"h", "n", "d", "v", "e"}
+
     rules = [
-        ResponseRule("b", "o"),
-        PrecedenceRule("o", "b"),
-        ExistenceRule("b"),
-        InitializationRule("b"),
+        ChainResponseRule("n", "d"),
+        PrecedenceRule("v", "e"),
+        NotCoExistenceRule("h", "n"),
     ]
 
-    # Concrete minimized version of the data
-    # many traces are ["m", "r"], with one trace ["r", "m", "r"].
     log = [
-        ["b", "b", "b"],
-        ["b", "o", "b", "o"],
-        [
-            "b",
-            "b",
-            "b",
-        ],
+        ["d", "h", "v", "e"],
+        ["n", "d", "v", "e"],
+        ["n", "v", "d", "e"],
+        ["n", "d", "e", "v"],
     ]
-    alphabet = {"A", "B", "C", "D", "E", "F"}
-    rules = [
-        InitializationRule("A"),
-        ResponseRule("B", "C"),
-        ChainResponseRule("D", "E"),
-        PrecedenceRule("D", "F"),
-        NotSuccessionRule("D", "B"),
-        NotSuccessionRule("B", "D"),
-    ]
-    log = [
-        ["A", "B", "D", "E", "C", "F"],
-        ["A", "B", "D", "E", "C", "F"],
-        ["A", "B", "D", "E", "C", "F"],
-    ]
+
     dfg = DirectlyFollowsGraph(log).graph
 
-    # print("DFG nodes:")
-    # print(list(dfg.nodes(data=True)))
+    print("DFG nodes:")
+    print(list(dfg.nodes(data=True)))
 
-    # print("DFG edges:")
-    # print(list(dfg.edges(data=True)))
+    print("DFG edges:")
+    print(list(dfg.edges(data=True)))
 
     po = detect_rule_based_po(rules, alphabet, dfg)
+
     print("Detected PO:")
     print(po)
-    print(po.groups)
-    print(po.edges)
+
     if po is not None:
+        print("Groups:")
+        print(po.groups)
+
+        print("Edges:")
+        print(po.edges)
+
         branches = po_to_parallel_sequence_branches(po, rules)
         print("Branches:")
         print(branches)

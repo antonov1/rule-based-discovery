@@ -257,7 +257,7 @@ def evaluate_trial(
 
         rules = extract(
             preprocessed_log,
-            min_support=0.5,
+            min_support=0.25,
             min_confidence=0.5,
         )
 
@@ -855,7 +855,7 @@ if __name__ == "__main__":
     mp.freeze_support()
     evaluate(
         start_idx=0,
-        num_trials=200,
+        num_trials=100,
         max_workers=8,
         trial_timeout=600,
         max_attempts_per_trial=None,
