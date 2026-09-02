@@ -351,8 +351,6 @@ def apply_IM_with_rules(
 
     if flower is None:
         # Kept only for naive repair mechanism
-        print(f"What we expected to satisfy: {rules}, what the log is like: {log[:10]}")
-        raise ValueError("d")
         return ProcessTree()
 
     return mine_decomposition(

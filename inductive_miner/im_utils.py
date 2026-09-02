@@ -10,6 +10,7 @@ from inductive_miner.cuts import LoopCut
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import (
     AbstractRule,
+    AtMostOnceRule,
     EndRule,
     ExistenceRule,
     InitializationRule,
@@ -209,7 +210,28 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
         return ProcessTree()  # Tau
 
     activity = nodes.pop()
+    at_most_once = any(
+        isinstance(rule, AtMostOnceRule) and rule.target_activity == activity
+        for rule in rules
+    )
 
+    existence = any(
+        isinstance(rule, (ExistenceRule, EndRule, InitializationRule))
+        and rule.target_activity == activity
+        for rule in rules
+    )
+
+    if at_most_once:
+        if existence:
+            return ProcessTree(label=activity)
+
+        root = ProcessTree(operator=Operator.XOR)
+        tau = ProcessTree()
+        event = ProcessTree(label=activity)
+        tau.parent = root
+        event.parent = root
+        root.children = [tau, event]
+        return root
     if not dfg_graph.has_edge(activity, activity):
         unsat_rules = []
         for r in rules:
