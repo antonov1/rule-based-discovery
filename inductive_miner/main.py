@@ -552,18 +552,17 @@ if __name__ == "__main__":
     log = preprocess_log(log)
     rules = []
     log = [
-        ["a", "d", "e", "f"],
-        ["a", "f", "b", "d", "e", "f"],
-        ["a", "d", "e", "f", "c"],
-        ["a", "c", "f"],
+        ["r", "n", "d", "e", "x"],
+        ["n", "v", "d", "e", "x"],
+        ["r", "v", "e", "d", "y"],
+        ["n", "d", "e", "e", "y"],
     ]
-
     rules = [
-        PrecedenceRule("b", "d"),
-        ChainResponseRule("d", "e"),
-        NotCoExistenceRule("b", "c"),
-        CoExistenceRule("e", "f"),
-        AtMostOnceRule("f"),
+        RespondedExistenceRule("v", "d"),
+        PrecedenceRule("v", "e"),
+        AtMostOnceRule("e"),
+        ChainResponseRule("n", "d"),
+        NotCoExistenceRule("x", "y"),
     ]
     rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")

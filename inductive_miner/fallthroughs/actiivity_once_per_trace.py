@@ -1,51 +1,65 @@
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 
 import networkx as nx
 from inductive_miner.cuts import ConcurrentCut
 from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator
-from rules import AbstractRule, AtMostOnceRule, ExistenceRule
+from rules import AbstractRule
 
 
-def detect_based_on_rules(log: List[List[str]], rules: List[AbstractRule]):
-    alphabet = set([e for trace in log for e in trace])
-    candidates = []
-    for r in rules:
-        if isinstance(r, (ExistenceRule, AtMostOnceRule)):
-            candidates.append(r.target_activity)
-    candidates = sorted(set(candidates))
-    for c in candidates:
-        unsat_rules = ConcurrentCut.check_rules(rules, [{c}, alphabet - {c}])
-        if not unsat_rules:
-            return c
-    return None
+def detect(
+    log: List[List[str]],
+    rules: List[AbstractRule] = None,
+) -> Tuple[Optional[str], Set[AbstractRule]]:
+    if not log:
+        return None, set()
 
+    alphabet = {activity for trace in log for activity in trace}
 
-def detect(log: List[List[str]], rules: List[AbstractRule] = None):
     candidate_activities = set(log[0])
+
     for trace in log:
-        for act in list(candidate_activities):
-            if trace.count(act) != 1:
-                candidate_activities.remove(act)
-    candidates = sorted(list(candidate_activities))
-    if rules:
-        alphabet = set([e for trace in log for e in trace])
+        for activity in list(candidate_activities):
+            if trace.count(activity) != 1:
+                candidate_activities.remove(activity)
 
-        for c in candidates:
-            unsat_rules = ConcurrentCut.check_rules(rules, [{c}, alphabet - {c}])
-            if not unsat_rules:
-                return c
-        return detect_based_on_rules(log, rules)
+    candidates = sorted(candidate_activities)
+    unsat_rules = None
 
-    return candidates[0] if len(candidates) else None
+    for candidate in candidates:
+        if not rules:
+            return candidate, set()
+
+        violations = ConcurrentCut.check_rules(
+            rules,
+            [
+                {candidate},
+                alphabet - {candidate},
+            ],
+        )
+
+        if not violations:
+            return candidate, set()
+
+        if not unsat_rules:
+            unsat_rules = violations
+
+    return None, unsat_rules
 
 
-def project(log: List[List[str]], candidate: str) -> List[List[str]]:
+def project(
+    log: List[List[str]],
+    candidate: str,
+):
+    candidate_log = [
+        [activity for activity in trace if activity == candidate] for trace in log
+    ]
 
-    new_log = [[e for e in trace if e != candidate] for trace in log]
-    new_log = [trace for trace in new_log if len(trace)]
-    remaining_log = [[e for e in trace if e == candidate] for trace in log]
-    return remaining_log, new_log
+    remaining_log = [
+        [activity for activity in trace if activity != candidate] for trace in log
+    ]
+
+    return candidate_log, remaining_log
 
 
 def apply(
@@ -53,32 +67,43 @@ def apply(
     dfg: nx.DiGraph,
     rules: List[AbstractRule] = None,
     **kwargs,
-) -> Optional[Decomposition]:
-    acts = sorted({e for trace in log for e in trace})
-    if len(acts) == 1:
-        return None
-    candidate = detect(log, rules)
-    if not candidate:
-        return None
-    acts = list(dfg.nodes)
+):
+    rules = rules or []
 
-    if rules:
-        acts = {act for trace in log for act in trace} - {candidate}
-        unsat_rules = ConcurrentCut.check_rules(rules, [{candidate}, acts])
-        if unsat_rules:
-            return unsat_rules
+    alphabet = {activity for trace in log for activity in trace}
 
-    proj_rules = (
+    if len(alphabet) <= 1:
+        return None
+
+    candidate, unsat_rules = detect(
+        log,
+        rules,
+    )
+
+    if candidate is None:
+        return unsat_rules
+
+    groups = [
+        {candidate},
+        alphabet - {candidate},
+    ]
+
+    projected_rules = (
         ConcurrentCut.project_rules(
             rules,
-            [{candidate}, {act for trace in log for act in trace} - {candidate}],
+            groups,
         )
         if rules
-        else None
+        else [[], []]
     )
-    projected_logs = project(log, candidate=candidate)
+
+    projected_logs = project(
+        log,
+        candidate,
+    )
+
     return Decomposition(
         operator=Operator.PARALLEL,
         sublogs=projected_logs,
-        projected_rules=proj_rules,
+        projected_rules=projected_rules,
     )

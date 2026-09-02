@@ -104,6 +104,21 @@ def normalize_tree(node: ProcessTree):
             child.parent = node
             normalized_children.append(child)
 
+    # XOR(tau, tau, ...) -> XOR(tau, ...)
+    if node.operator == Operator.XOR:
+        seen_tau = False
+        deduplicated = []
+
+        for child in normalized_children:
+            if is_tau(child):
+                if seen_tau:
+                    continue
+                seen_tau = True
+
+            deduplicated.append(child)
+
+        normalized_children = deduplicated
+
     node.children = normalized_children
 
     if node.operator in {Operator.XOR, Operator.LOOP}:
@@ -168,9 +183,8 @@ def base_cases(
     nodes = set(dfg_graph.nodes)
     rules = rules or []
     if not nodes:
-        # The candidate base case is tau / the empty trace.
-        unsat_rules = {
-            rule
+        required_activities = {
+            rule.target_activity
             for rule in rules
             if isinstance(
                 rule,
@@ -182,8 +196,24 @@ def base_cases(
             )
         }
 
-        if unsat_rules:
-            return unsat_rules
+        if len(required_activities) == 1:
+            activity = next(iter(required_activities))
+            return ProcessTree(label=activity)
+
+        if len(required_activities) > 1:
+            return {
+                rule
+                for rule in rules
+                if isinstance(
+                    rule,
+                    (
+                        ExistenceRule,
+                        InitializationRule,
+                        EndRule,
+                    ),
+                )
+            }
+
         return process_tree
 
     if len(nodes) == 1 or (len(nodes) == 2 and "ArtificialNoneNode" in nodes):
