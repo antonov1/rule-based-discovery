@@ -552,8 +552,21 @@ if __name__ == "__main__":
     log_org = log.copy()
 
     log = preprocess_log(log)
-    rules = [NotCoExistenceRule("B", "C"), ExistenceRule("C"), ResponseRule("A", "B")]
-    log = [["A", "C", "B"], ["A", "B", "C"]]
+    rules = []
+    log = [
+        ["a", "d", "e", "f"],
+        ["a", "f", "b", "d", "e", "f"],
+        ["a", "d", "e", "f", "c"],
+        ["a", "c", "f"],
+    ]
+
+    rules = [
+        PrecedenceRule("b", "d"),
+        ChainResponseRule("d", "e"),
+        NotCoExistenceRule("b", "c"),
+        CoExistenceRule("e", "f"),
+        AtMostOnceRule("f"),
+    ]
     rules, log = preprocess_rule_set(rules, log)
     print(f"Rules are: {rules}")
     model = apply_IM_with_rules(

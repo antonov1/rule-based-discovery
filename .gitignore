@@ -258,3 +258,4 @@ __pycache__/
 /evaluation/declare_dataset/
 /evaluation/data/
 ebi_precision
+case_study

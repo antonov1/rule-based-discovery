@@ -17,6 +17,7 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
+    EndRule,
     ExistenceRule,
     InitializationRule,
     NotCoExistenceRule,
@@ -306,112 +307,254 @@ def merge_groups_connected_by_not_coexistence(
     return groups
 
 
-def calculate_weight(dfg, source, target) -> float:
+def find_chain_component_indices(
+    po: RuleBasedPO,
+    rules: List[AbstractRule],
+) -> Set[int]:
     """
-    Runs Dijkstra, treates DFG weights as inverses
+    Return PO component indices that contain activities participating
+    in ChainResponse / ChainPrecedence rules.
     """
-    if source == target:
-        return 0
-    if source not in dfg.nodes or target not in dfg.nodes:
-        return 0
+    component_of = {
+        activity: i for i, group in enumerate(po.groups) for activity in group
+    }
+
+    chain_components = set()
+
+    for rule in rules or []:
+        if not isinstance(rule, (ChainPrecedenceRule, ChainResponseRule)):
+            continue
+
+        component_a = component_of.get(rule.activity_a)
+        component_b = component_of.get(rule.activity_b)
+
+        if component_a is not None:
+            chain_components.add(component_a)
+
+        if component_b is not None:
+            chain_components.add(component_b)
+
+    return chain_components
+
+
+def compute_path_supports(
+    dfg: nx.DiGraph,
+) -> dict[int, dict[int, float]]:
+    """
+    Generalization of path computation
+      - edge cost = 1 / weight
+      - choose the minimum-cost path
+      - support = sum of original DFG weights along that path
+
+    Dijkstra is run once per source instead of once per queried pair.
+    """
     cost_graph = nx.DiGraph()
     cost_graph.add_nodes_from(dfg.nodes)
-    for a, b, data in dfg.edges(data=True):
-        if a == b:
+
+    for source, target, data in dfg.edges(data=True):
+        if source == target:
             continue
+
         weight = data.get("weight", 1)
+
         if weight <= 0:
             continue
-        cost_graph.add_edge(a, b, cost=1 / weight)
-    try:
-        path = nx.dijkstra_path(cost_graph, source, target, weight="cost")
-    except nx.NetworkXNoPath:
-        return 0
-    total_weight = 0
-    for a, b in zip(path, path[1:]):
-        total_weight += dfg[a][b].get("weight", 1)
-    return total_weight
+
+        cost_graph.add_edge(
+            source,
+            target,
+            cost=1.0 / weight,
+        )
+
+    supports: dict[int, dict[int, float]] = {node: {node: 0.0} for node in dfg.nodes}
+
+    for source in cost_graph.nodes:
+        _, paths = nx.single_source_dijkstra(
+            cost_graph,
+            source,
+            weight="cost",
+        )
+
+        source_supports = supports[source]
+
+        for target, path in paths.items():
+            if source == target:
+                continue
+
+            total_weight = 0.0
+
+            for a, b in zip(path, path[1:]):
+                total_weight += dfg[a][b].get("weight", 1)
+
+            source_supports[target] = total_weight
+
+    return supports
+
+
+def chain_guided_topological_order(
+    graph: nx.DiGraph,
+    chain_components: Set[int],
+    supports: dict[int, dict[int, float]],
+) -> Optional[List[int]]:
+    """
+    Construct a topological ordering of the existing rule-induced DAG,
+    guided by DFG evidence involving chain components.
+    """
+    if not nx.is_directed_acyclic_graph(graph):
+        return None
+
+    remaining = set(graph.nodes)
+
+    indegree = {node: graph.in_degree(node) for node in graph.nodes}
+
+    available = {node for node, degree in indegree.items() if degree == 0}
+
+    def preference(source: int, target: int) -> float:
+        forward = supports.get(source, {}).get(target, 0.0)
+        backward = supports.get(target, {}).get(source, 0.0)
+        return forward - backward
+
+    scores = {}
+
+    for node in graph.nodes:
+        score = 0.0
+
+        for other in graph.nodes:
+            if node == other:
+                # incomparable
+                continue
+
+            if node not in chain_components and other not in chain_components:
+                continue
+
+            score += preference(node, other)
+
+        scores[node] = score
+
+    order = []
+
+    while remaining:
+        if not available:
+            return None
+
+        # Deterministic tie-breaking
+        chosen = max(
+            available,
+            key=lambda node: (
+                scores[node],
+                -node,
+            ),
+        )
+
+        available.remove(chosen)
+        remaining.remove(chosen)
+        order.append(chosen)
+
+        for node in remaining:
+            if node in chain_components or chosen in chain_components:
+                scores[node] -= preference(node, chosen)
+
+        for successor in graph.successors(chosen):
+            indegree[successor] -= 1
+
+            if indegree[successor] == 0 and successor in remaining:
+                available.add(successor)
+
+    return order
 
 
 def handle_chain_components(
-    po: RuleBasedPO, rules: Set[AbstractRule], dfg: nx.DiGraph
+    po: RuleBasedPO,
+    rules: Set[AbstractRule],
+    dfg: nx.DiGraph,
 ) -> Optional[RuleBasedPO]:
-    components_with_chain_rules = set()
-    for r in rules:
-        if isinstance(r, ChainPrecedenceRule) or isinstance(r, ChainResponseRule):
-            act_a, act_b = r.activity_a, r.activity_b
-            for i, group in enumerate(po.groups):
-                if act_a in group or act_b in group:
-                    components_with_chain_rules.add(i)
-    if not components_with_chain_rules:
+    chain_components = find_chain_component_indices(
+        po,
+        list(rules),
+    )
+
+    if not chain_components:
         return po
-    # build the graph of components
-    g = nx.DiGraph()
-    g.add_nodes_from(range(len(po.groups)))
-    g.add_edges_from(po.edges)
-    if len(g.nodes) == 1:
-        return po
-
-    if not nx.is_directed_acyclic_graph(g):
-        return None
-    closure = nx.transitive_closure_dag(g)
-    abstracted_dfg = abstract_dfg(dfg, po.groups)
-
-    def comparable(i: int, j: int) -> bool:
-        return i == j or closure.has_edge(i, j) or closure.has_edge(j, i)
-
-    new_edges = set(po.edges)
-    for cmp in components_with_chain_rules:
-        for other_cmp in g.nodes:
-            if other_cmp == cmp:
-                continue
-            if not comparable(cmp, other_cmp):
-                # those are parallel
-                cost_cmp_o = calculate_weight(abstracted_dfg, cmp, other_cmp)
-                cost_o_cmp = calculate_weight(abstracted_dfg, other_cmp, cmp)
-                (
-                    new_edges.add((other_cmp, cmp))
-                    if cost_o_cmp > cost_cmp_o
-                    else new_edges.add((cmp, other_cmp))
-                )
 
     graph = nx.DiGraph()
     graph.add_nodes_from(range(len(po.groups)))
-    graph.add_edges_from(new_edges)
+    graph.add_edges_from(po.edges)
 
-    # The newly oriented edges may introduce cycles, this is why we condense again
-    sccs = list(nx.strongly_connected_components(graph))
+    if len(graph.nodes) <= 1:
+        return po
 
-    node_to_scc = {
-        node: scc_index for scc_index, scc in enumerate(sccs) for node in scc
-    }
-
-    merged_groups = [set().union(*(po.groups[node] for node in scc)) for scc in sccs]
-
-    merged_edges = {
-        (node_to_scc[source], node_to_scc[target])
-        for source, target in graph.edges
-        if node_to_scc[source] != node_to_scc[target]
-    }
-
-    condensed_graph = nx.DiGraph()
-    condensed_graph.add_nodes_from(range(len(merged_groups)))
-    condensed_graph.add_edges_from(merged_edges)
-
-    if len(merged_groups) <= 1:
-        # Nothing can be done
-
+    if not nx.is_directed_acyclic_graph(graph):
         return None
-    try:
-        reduced_graph = nx.transitive_reduction(condensed_graph)
 
-        return RuleBasedPO(
-            groups=merged_groups,
-            edges=set(reduced_graph.edges),
-        )
+    closure = nx.transitive_closure_dag(graph)
 
-    except nx.NetworkXAlgorithmError:
+    abstracted_dfg = abstract_dfg(
+        dfg,
+        po.groups,
+    )
+    # Compute paths on the abstracted DFG
+    supports = compute_path_supports(
+        abstracted_dfg,
+    )
+
+    order = chain_guided_topological_order(
+        graph,
+        chain_components,
+        supports,
+    )
+
+    if order is None:
         return None
+
+    position = {node: index for index, node in enumerate(order)}
+
+    new_edges = set(po.edges)
+
+    for chain_component in chain_components:
+        for other_component in graph.nodes:
+            if other_component == chain_component:
+                continue
+
+            # Do not change relations tht are already implied by the
+            # rule-induced PO
+            if closure.has_edge(
+                chain_component,
+                other_component,
+            ) or closure.has_edge(
+                other_component,
+                chain_component,
+            ):
+                continue
+
+            # They are currently incomparable
+            if position[chain_component] < position[other_component]:
+                new_edges.add(
+                    (
+                        chain_component,
+                        other_component,
+                    )
+                )
+            else:
+                new_edges.add(
+                    (
+                        other_component,
+                        chain_component,
+                    )
+                )
+
+    completed_graph = nx.DiGraph()
+    completed_graph.add_nodes_from(graph.nodes)
+    completed_graph.add_edges_from(new_edges)
+
+    if not nx.is_directed_acyclic_graph(completed_graph):
+        return None
+
+    reduced_graph = nx.transitive_reduction(completed_graph)
+
+    return RuleBasedPO(
+        groups=po.groups,
+        edges=set(reduced_graph.edges),
+    )
 
 
 def detect_label_splitting(
@@ -513,7 +656,7 @@ def detect_rule_based_po(
                 block_graph.add_edge(start_component, other)
 
     # If End(F), then all other blocks should be before F's block unless
-    # this creates a cycle.
+    # this creates a cyce.
     for end_component in end_components:
         for other in block_graph.nodes:
             if other != end_component:
@@ -566,9 +709,12 @@ def split_group_by_rules(
     graph = nx.DiGraph()
     graph.add_nodes_from(group)
 
+    chain_edges = set()
+
     for rule in rules or []:
         if not hasattr(rule, "activity_a"):
             continue
+
         a = rule.activity_a
         b = rule.activity_b
 
@@ -577,6 +723,7 @@ def split_group_by_rules(
 
         if isinstance(rule, (ChainResponseRule, ChainPrecedenceRule)):
             graph.add_edge(a, b)
+            chain_edges.add((a, b))
 
         elif isinstance(rule, NotCoExistenceRule):
             graph.add_edge(a, b)
@@ -587,10 +734,42 @@ def split_group_by_rules(
 
     condensed = nx.condensation(graph)
 
-    return [
-        set().union(*(condensed.nodes[node]["members"] for node in generation))
-        for generation in nx.topological_generations(condensed)
+    if any(len(condensed.nodes[node]["members"]) > 1 for node in condensed.nodes):
+        return [
+            set().union(*(condensed.nodes[node]["members"] for node in generation))
+            for generation in nx.topological_generations(condensed)
+        ]
+
+    generations = [
+        set(generation) for generation in nx.topological_generations(condensed)
     ]
+
+    activity_of = {
+        node: next(iter(condensed.nodes[node]["members"])) for node in condensed.nodes
+    }
+
+    activity_generations = [
+        {activity_of[node] for node in generation} for generation in generations
+    ]
+
+    result = []
+
+    for generation in activity_generations:
+        chain_sources = {a for a, _ in chain_edges if a in generation}
+
+        chain_targets = {b for _, b in chain_edges if b in generation}
+
+        chain_activities = chain_sources | chain_targets
+        unrelated = generation - chain_activities
+
+        if unrelated:
+            result.append(unrelated)
+
+        for activity in generation:
+            if activity in chain_activities:
+                result.append({activity})
+
+    return result
 
 
 def try_label_splitting(
@@ -837,6 +1016,7 @@ if __name__ == "__main__":
     alphabet = {"A", "B", "C", "D", "E", "F"}
     rules = [
         InitializationRule("A"),
+        EndRule("A"),
         ResponseRule("B", "C"),
         ChainResponseRule("D", "E"),
         PrecedenceRule("D", "F"),
