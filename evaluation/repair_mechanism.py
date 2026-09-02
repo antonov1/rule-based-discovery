@@ -584,7 +584,7 @@ def evaluate_trial(
             # =========================================================
             # 2. SPLIT MINER + PRE-PRUNING
             # =========================================================
-            """
+
             print(
                 f"Trial {current_idx}: " f"Split Miner pre-pruning",
                 flush=True,
@@ -606,7 +606,6 @@ def evaluate_trial(
                     f"{current_idx}" f"_sm_prepruned.pnml",
                 ),
             )
-            """
 
             # =========================================================
             # 3. RIM NAIVE
@@ -968,5 +967,5 @@ if __name__ == "__main__":
     evaluate(
         start_idx=0,
         num_trials=200,
-        max_workers=1,
+        max_workers=32,
     )
