@@ -530,37 +530,26 @@ def apply_IM(
 
 
 if __name__ == "__main__":
-    rules = [
-        NotCoExistenceRule("l", "o"),
-        ResponseRule("g", "a"),
-        ResponseRule("b", "a"),
-        NotSuccessionRule("n", "j"),
-        AtMostOnceRule("c"),
-        PrecedenceRule("f", "g"),
-        RespondedExistenceRule("m", "o"),
-        PrecedenceRule("h", "l"),
-        ResponseRule("l", "h"),
-    ]
     log = [
-        ["d", "h", "v", "e"],
-        ["n", "d", "v", "e"],
-        ["n", "v", "d", "e"],
-        ["n", "d", "e", "v"],
-    ]
-    log_org = traces_to_log(log)
-    rules = [
-        ChainResponseRule("n", "d"),
-        PrecedenceRule("v", "e"),
-        NotCoExistenceRule("h", "n"),
+        ["a", "h", "v", "e", "n"],
+        ["a", "v", "h", "e"],
+        ["a", "n", "v", "e"],
+        ["a", "v", "n", "e"],
+        ["a", "n", "e", "v"],  # precedence violation
     ]
 
-    rules, log = preprocess_rule_set(rules, log)
+    rules = [
+        NotCoExistenceRule("h", "n"),
+        PrecedenceRule("v", "e"),
+    ]
+    log_org = traces_to_log(log)
+    # rules, log = preprocess_rule_set(rules, log)
     for r in rules:
         log = r.apply(log)
     print(f"Rules are: {rules}")
     model = apply_IM_with_rules(
         log=log,
-        rules=rules,
+        rules=[],
         repair_mode=RepairVariant.Naive,
         noise_threshold=0,
     )
