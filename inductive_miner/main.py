@@ -17,18 +17,20 @@ from inductive_miner.fallthroughs import (
     s_tau,
     xor,
 )
-from inductive_miner.im_utils import add_child, base_cases, repair_mechanism
+from inductive_miner.im_utils import (
+    add_child,
+    base_cases,
+    normalize_tree,
+    repair_mechanism,
+)
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import preprocess_rule_set
 from rules import *
 
 from inductive_miner.im_utils import Decomposition, RepairVariant
 from metrics.fitness import fitness_alignment
-from metrics.precision import precision_token_based_tree
-from metrics.rule_conformance import (
-    conformance as rule_conformance_apply,
-    weighted_conformance as weighted_rule_conformance_apply,
-)
+from metrics.precision import precision_alignments_ebi_rust
+from metrics.rule_conformance import conformance as rule_conformance_apply
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
 ENABLE_PRINTS = True
@@ -529,42 +531,252 @@ def apply_IM(
     return ProcessTree()
 
 
+import signal
+
+
+class RepairModeTimeout(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise RepairModeTimeout()
+
+
+signal.signal(signal.SIGALRM, timeout_handler)
+
+TIMEOUT_SECONDS = 30 * 60
+
 if __name__ == "__main__":
-    log = [
-        ["a", "h", "v", "e", "n"],
-        ["a", "v", "h", "e"],
-        ["a", "n", "v", "e"],
-        ["a", "v", "n", "e"],
-        ["a", "n", "e", "v"],  # precedence violation
+    sepsis_log = pm4py.read_xes("./inductive_miner/sepsis.xes")
+    sepsis_log = pm4py.convert_to_dataframe(sepsis_log)
+    sepsis_log = preprocess_log(sepsis_log)
+    activities = {activity for trace in sepsis_log for activity in trace}
+    print(f"Activities in the log: {activities}")
+    # ---------------------------------------------------------
+    # Constraint levels
+    # ---------------------------------------------------------
+
+    structural_rules = [
+        InitializationRule("ER Registration"),
+        AtMostOnceRule("ER Registration"),
+        AtMostOnceRule("ER Triage"),
+        AtMostOnceRule("ER Sepsis Triage"),
+        AtMostOnceRule("IV Liquid"),
+        AtMostOnceRule("IV Antibiotics"),
+        AtMostOnceRule("Admission NC"),
+        AtMostOnceRule("Admission IC"),
+        AtMostOnceRule("Release A"),
+        AtMostOnceRule("Release B"),
+        AtMostOnceRule("Release C"),
+        AtMostOnceRule("Release D"),
+        AtMostOnceRule("Release E"),
+        NotCoExistenceRule("Release A", "Release B"),
+        NotCoExistenceRule("Release A", "Release C"),
+        NotCoExistenceRule("Release A", "Release D"),
+        NotCoExistenceRule("Release A", "Release E"),
+        NotCoExistenceRule("Release B", "Release C"),
+        NotCoExistenceRule("Release B", "Release D"),
+        NotCoExistenceRule("Release B", "Release E"),
+        NotCoExistenceRule("Release C", "Release D"),
+        NotCoExistenceRule("Release C", "Release E"),
+        NotCoExistenceRule("Release D", "Release E"),
     ]
 
-    rules = [
-        NotCoExistenceRule("h", "n"),
-        PrecedenceRule("v", "e"),
+    procedural_rules = [
+        ResponseRule("ER Registration", "ER Triage"),
+        ResponseRule("ER Triage", "ER Sepsis Triage"),
+        PrecedenceRule("ER Sepsis Triage", "IV Liquid"),
+        PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
+        CoExistenceRule("IV Liquid", "IV Antibiotics"),
+        PrecedenceRule("ER Sepsis Triage", "Admission NC"),
+        PrecedenceRule("ER Sepsis Triage", "Admission IC"),
+        NotSuccessionRule("Admission IC", "Admission NC"),
+        PrecedenceRule("ER Sepsis Triage", "Release A"),
+        PrecedenceRule("ER Sepsis Triage", "Release B"),
+        PrecedenceRule("ER Sepsis Triage", "Release C"),
+        PrecedenceRule("ER Sepsis Triage", "Release D"),
+        PrecedenceRule("ER Sepsis Triage", "Release E"),
     ]
-    log_org = traces_to_log(log)
-    # rules, log = preprocess_rule_set(rules, log)
-    for r in rules:
-        log = r.apply(log)
-    print(f"Rules are: {rules}")
-    model = apply_IM_with_rules(
-        log=log,
-        rules=[],
-        repair_mode=RepairVariant.Naive,
-        noise_threshold=0,
+
+    guideline_rules = [
+        ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
+        ResponseRule("ER Sepsis Triage", "LacticAcid"),
+    ]
+    rule_levels = {
+        "C1_structural": structural_rules,
+        "C2_procedural": structural_rules + procedural_rules,
+        "C3_treatment": structural_rules + procedural_rules + guideline_rules,
+    }
+
+    repair_modes = {
+        "no_repair": RepairVariant.Naive,
+        "edit_distance": RepairVariant.EditDistance,
+    }
+
+    noise_thresholds = [i / 10 for i in range(0, 11)]  # 0.0 to 1.0 in steps of 0.1
+
+    # ---------------------------------------------------------
+    # Load log
+    # ---------------------------------------------------------
+
+    log = pm4py.read_xes("./inductive_miner/sepsis.xes")
+    log_org = log.copy()
+
+    log = preprocess_log(log)
+
+    alphabet = set([activity for trace in log for activity in trace])
+
+    # ---------------------------------------------------------
+    # Inspect empirical support/confidence of all clinical rules
+    # ---------------------------------------------------------
+
+    all_rules = rule_levels["C3_treatment"]
+
+    print("\n=== Clinical rule statistics ===")
+
+    for rule in all_rules:
+        rule.apply(log.copy())
+
+        try:
+            support = rule.calc_support(log)
+        except TypeError:
+            support = rule.calc_support()
+
+        try:
+            confidence = rule.calc_confidence(log)
+        except TypeError:
+            confidence = rule.calc_confidence()
+
+        print(
+            f"Rule: {rule}, "
+            f"Support: {support:.3f}, "
+            f"Confidence: {confidence:.3f}"
+        )
+
+    # ---------------------------------------------------------
+    # Evaluation
+    # ---------------------------------------------------------
+
+    results = []
+
+results = []
+
+for level_name, rules in rule_levels.items():
+    for repair_name, repair_mode in repair_modes.items():
+        for noise_threshold in noise_thresholds:
+
+            print("\n" + "=" * 80)
+            print(
+                f"Rules: {level_name} | "
+                f"Repair: {repair_name} | "
+                f"Noise: {noise_threshold}"
+            )
+            print("=" * 80)
+
+            signal.alarm(TIMEOUT_SECONDS)
+
+            try:
+                model = apply_IM_with_rules(
+                    log=log.copy(),
+                    rules=rules,
+                    repair_mode=repair_mode,
+                    noise_threshold=noise_threshold,
+                )
+
+                model = normalize_tree(model)
+
+                print(f"Final model: {model}")
+
+                fitness = fitness_alignment(log_org, model)
+                precision = precision_alignments_ebi_rust(log_org, model)
+
+                f1 = (
+                    2 * fitness * precision / (fitness + precision)
+                    if fitness + precision > 0
+                    else 0.0
+                )
+
+                rule_conf = rule_conformance_apply(
+                    model,
+                    rules,
+                    alphabet=alphabet,
+                )[0]
+
+                results.append(
+                    {
+                        "constraint_level": level_name,
+                        "num_rules": len(rules),
+                        "repair": repair_name,
+                        "noise_threshold": noise_threshold,
+                        "fitness": fitness,
+                        "precision": precision,
+                        "f1": f1,
+                        "rule_conformance": rule_conf,
+                        "model": str(model),
+                        "status": "completed",
+                    }
+                )
+
+                print(
+                    f"Fitness: {fitness:.3f}, "
+                    f"Precision: {precision:.3f}, "
+                    f"F1: {f1:.3f}, "
+                    f"Rule Conf: {rule_conf:.3f}"
+                )
+
+            except RepairModeTimeout:
+                print(
+                    f"TIMEOUT after 30 min: "
+                    f"{level_name} | {repair_name} | "
+                    f"noise={noise_threshold:.2f}"
+                )
+
+                results.append(
+                    {
+                        "constraint_level": level_name,
+                        "num_rules": len(rules),
+                        "repair": repair_name,
+                        "noise_threshold": noise_threshold,
+                        "fitness": None,
+                        "precision": None,
+                        "f1": None,
+                        "rule_conformance": None,
+                        "model": None,
+                        "status": "timeout",
+                    }
+                )
+
+            finally:
+                signal.alarm(0)
+    # ---------------------------------------------------------
+    # Compact summary
+    # ---------------------------------------------------------
+
+    print("\n\n=== SUMMARY ===")
+
+    for result in results:
+        if result.get("status") == "completed":
+            print(
+                f"{result['constraint_level']:15s} | "
+                f"{result['repair']:13s} | "
+                f"noise={result['noise_threshold']:.2f} | "
+                f"fit={result['fitness']:.3f} | "
+                f"prec={result['precision']:.3f} | "
+                f"F1={result['f1']:.3f} | "
+                f"RC={result['rule_conformance']:.3f} | "
+                f"status=completed"
+            )
+        else:
+            print(
+                f"{result['constraint_level']:15s} | "
+                f"{result['repair']:13s} | "
+                f"noise={result['noise_threshold']:.2f} | "
+                f"status={result.get('status', 'unknown')}"
+            )
+
+    results_df = pd.DataFrame(results)
+
+    results_df.to_csv(
+        "./inductive_miner/results_sepsis.csv",
+        index=False,
     )
-    # model = normalize_tree(model)
-    print(f"Final model is: {model}")
-    pm4py.view_process_tree(model)  # Visualize the process tree
-    fitness = fitness_alignment(log_org, model)
-    prec = precision_token_based_tree(log_org, model)
-    print(
-        f"Fit: {fitness}, prec: {prec}, F1: {2 * fitness * prec / (fitness + prec) if fitness + prec > 0 else 0}"
-    )
-    rule_conf = rule_conformance_apply(
-        model, rules, alphabet=set(log_org["concept:name"].unique())
-    )
-    weighted_rule_conf = weighted_rule_conformance_apply(
-        model, rules, alphabet=set(log_org["concept:name"].unique()), log=log
-    )
-    print(f"Rule Conf: {rule_conf}, Weighted Rule Conf : {rule_conf}")

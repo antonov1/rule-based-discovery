@@ -1,9 +1,7 @@
 import os
-import re
 import traceback
 from typing import Set
 
-import numpy as np
 import pandas as pd
 import pm4py
 from llm_connection.query import code_extraction
@@ -17,20 +15,21 @@ from pm4py.objects.process_tree.obj import ProcessTree
 # Configuration
 # ============================================================
 
-# Folder containing runtimes.csv, PTML models, and rule files
-MODELS_DIR = "./evaluation/imr/models"
-
-# Folder containing RTFM.xes, HB.xes, ...
-LOGS_DIR = "./evaluation/data"
+EXPERIMENT_DIR = "./experiments/imr"
 
 RUNTIMES_PATH = os.path.join(
-    MODELS_DIR,
+    EXPERIMENT_DIR,
     "runtimes.csv",
 )
 
-RESULTS_PATH = os.path.join(
-    MODELS_DIR,
-    "evaluation_results.csv",
+RESULTS_PATH_SUPPORT_1 = os.path.join(
+    EXPERIMENT_DIR,
+    "evaluation_results_support_1.0.csv",
+)
+
+RESULTS_PATH_SUPPORT_08 = os.path.join(
+    EXPERIMENT_DIR,
+    "evaluation_results_support_0.8.csv",
 )
 
 
@@ -59,7 +58,7 @@ def get_non_tau_leaves(node: ProcessTree | None) -> Set[str]:
 
 
 def load_rules(path, alphabet):
-    """Load Declare rules from the rule text file."""
+    """Load DECLARE rules from a rule text file."""
 
     with open(path, "r", encoding="utf-8") as file:
         code = file.read()
@@ -79,6 +78,8 @@ def load_rules(path, alphabet):
 
     code = "\n".join(lines)
 
+    import re
+
     code = re.sub(r"\(\s*", "('", code)
     code = re.sub(r"\s*,\s*", "', '", code)
     code = re.sub(r"\s*\)", "')", code)
@@ -93,40 +94,6 @@ def load_rules(path, alphabet):
     return rules
 
 
-def parse_setting(setting):
-    """
-    s_0_25_c_0_75
-        ->
-    support=0.25, confidence=0.75
-    """
-
-    match = re.search(
-        r"s_(\d+)_(\d+)_c_(\d+)_(\d+)",
-        str(setting),
-    )
-
-    if not match:
-        return np.nan, np.nan
-
-    support = float(f"{match.group(1)}.{match.group(2)}")
-
-    confidence = float(f"{match.group(3)}.{match.group(4)}")
-
-    return support, confidence
-
-
-def parse_algorithm(model_file):
-    """
-    imr_HB_s_0_25_c_0_75_0_6.ptml
-        ->
-    imr
-    """
-
-    filename = os.path.basename(str(model_file))
-
-    return filename.split("_", 1)[0]
-
-
 def find_file(root_dir, filename):
     """Find a file recursively below root_dir."""
 
@@ -139,17 +106,38 @@ def find_file(root_dir, filename):
     return None
 
 
-def find_log(log_id):
-    """Find <log_id>.xes in LOGS_DIR."""
+def load_existing_results(path):
+    """Load an existing evaluation CSV, or return an empty DataFrame."""
 
-    target = f"{log_id}.xes".lower()
+    if os.path.exists(path):
+        return pd.read_csv(path)
 
-    for root, _, files in os.walk(LOGS_DIR):
-        for filename in files:
-            if filename.lower() == target:
-                return os.path.join(root, filename)
+    return pd.DataFrame()
 
-    return None
+
+def save_results(results, path):
+    """Sort and save evaluation results."""
+
+    if results.empty:
+        return
+
+    sort_columns = [
+        column
+        for column in [
+            "trial",
+            "support",
+            "model_file",
+        ]
+        if column in results.columns
+    ]
+
+    if sort_columns:
+        results = results.sort_values(sort_columns).reset_index(drop=True)
+
+    results.to_csv(
+        path,
+        index=False,
+    )
 
 
 # ============================================================
@@ -167,23 +155,37 @@ def evaluate_models():
 
     runtimes = runtimes[runtimes["status"].astype(str).str.lower().eq("success")].copy()
 
+    runtimes["support"] = pd.to_numeric(
+        runtimes["support"],
+        errors="coerce",
+    )
+
+    # Only evaluate the two expected support settings
+    runtimes = runtimes[runtimes["support"].isin([1.0, 0.8])].copy()
+
     print(f"Found {len(runtimes)} successful models.")
 
+    print(runtimes["support"].value_counts().sort_index())
+
     # --------------------------------------------------------
-    # Resume previous evaluation
+    # Resume previous evaluations
     # --------------------------------------------------------
 
-    if os.path.exists(RESULTS_PATH):
-        results = pd.read_csv(RESULTS_PATH)
-    else:
-        results = pd.DataFrame()
+    results_by_support = {
+        1.0: load_existing_results(RESULTS_PATH_SUPPORT_1),
+        0.8: load_existing_results(RESULTS_PATH_SUPPORT_08),
+    }
 
-    completed = set()
+    completed_by_support = {}
 
-    if not results.empty:
-        completed = set(results["model_file"].astype(str))
+    for support, results in results_by_support.items():
 
-    # Cache event logs and rules
+        if results.empty or "model_file" not in results.columns:
+            completed_by_support[support] = set()
+        else:
+            completed_by_support[support] = set(results["model_file"].astype(str))
+
+    # Cache logs and parsed rules
     log_cache = {}
     rule_cache = {}
 
@@ -193,64 +195,60 @@ def evaluate_models():
 
     for _, row in runtimes.iterrows():
 
-        model_file = str(row["model_file"])
+        support = float(row["support"])
+        trial = int(row["trial"])
 
-        if model_file in completed:
-            print(f"Skipping {model_file}")
+        model_file = str(row["model_file"])
+        log_file = str(row["log_file"])
+        rules_file = str(row["rules_file"])
+
+        if model_file in completed_by_support[support]:
+            print(f"Skipping trial {trial}: " f"{model_file}")
             continue
 
-        log_id = str(row["log"])
-
-        support, confidence = parse_setting(row["setting"])
-
-        sup = pd.to_numeric(
-            row["sup"],
-            errors="coerce",
-        )
-
-        algorithm = parse_algorithm(model_file)
-
-        print(
-            f"\n{log_id} | "
-            f"{algorithm} | "
-            f"s={support:.2f} | "
-            f"c={confidence:.2f} | "
-            f"sup={sup}"
-        )
+        print(f"\nTrial {trial} | " f"support={support:.1f} | " f"{model_file}")
 
         try:
+
             # =================================================
             # Locate files
             # =================================================
 
             model_path = find_file(
-                MODELS_DIR,
+                EXPERIMENT_DIR,
                 model_file,
             )
 
+            log_path = find_file(
+                EXPERIMENT_DIR,
+                log_file,
+            )
+
             rules_path = find_file(
-                MODELS_DIR,
-                row["rules_file"],
+                EXPERIMENT_DIR,
+                rules_file,
             )
 
             if model_path is None:
                 raise FileNotFoundError(f"Model not found: {model_file}")
 
+            if log_path is None:
+                raise FileNotFoundError(f"Event log not found: {log_file}")
+
             if rules_path is None:
-                raise FileNotFoundError(f"Rules not found: {row['rules_file']}")
+                raise FileNotFoundError(f"Rules not found: {rules_file}")
 
             # =================================================
             # Load event log
             # =================================================
 
-            if log_id not in log_cache:
+            log_key = os.path.abspath(log_path)
 
-                log_path = find_log(log_id)
+            if log_key not in log_cache:
 
-                if log_path is None:
-                    raise FileNotFoundError(f"Event log not found: {log_id}.xes")
-
-                log = pm4py.read_xes(log_path)
+                log = pm4py.read_xes(
+                    log_path,
+                )
 
                 log = log_converter.apply(
                     log,
@@ -262,20 +260,20 @@ def evaluate_models():
 
                 alphabet = set(log["concept:name"].dropna().unique())
 
-                log_cache[log_id] = (
+                log_cache[log_key] = (
                     log,
                     alphabet,
                 )
 
-            log, alphabet = log_cache[log_id]
+            log, alphabet = log_cache[log_key]
 
             # =================================================
             # Load rules
             # =================================================
 
             rules_key = (
-                log_id,
                 os.path.abspath(rules_path),
+                frozenset(alphabet),
             )
 
             if rules_key not in rule_cache:
@@ -288,7 +286,7 @@ def evaluate_models():
             rules = rule_cache[rules_key]
 
             # =================================================
-            # Load existing PTML model
+            # Load PTML model
             # =================================================
 
             model = pm4py.read_ptml(model_path)
@@ -315,28 +313,29 @@ def evaluate_models():
                 alphabet,
             )[0]
 
+            runtime_seconds = pd.to_numeric(
+                row["runtime_seconds"],
+                errors="coerce",
+            )
+
             # =================================================
             # Store result
             # =================================================
 
             result = {
-                "log": log_id,
-                "algorithm": algorithm,
-                "setting": row["setting"],
+                "trial": trial,
                 "support": support,
-                "confidence": confidence,
-                "sup": sup,
                 "fitness": fitness,
                 "precision": precision,
                 "num_activities": num_activities,
                 "conformance": model_conformance,
-                # Original mining runtime
-                "runtime_seconds": pd.to_numeric(
-                    row["runtime_seconds"],
-                    errors="coerce",
-                ),
+                "runtime_seconds": runtime_seconds,
+                "rules_file": rules_file,
+                "log_file": log_file,
                 "model_file": model_file,
             }
+
+            results = results_by_support[support]
 
             results = pd.concat(
                 [
@@ -346,12 +345,19 @@ def evaluate_models():
                 ignore_index=True,
             )
 
-            completed.add(model_file)
+            results_by_support[support] = results
 
-            # Save immediately so the experiment is resumable
-            results.to_csv(
-                RESULTS_PATH,
-                index=False,
+            completed_by_support[support].add(model_file)
+
+            # Save immediately so evaluation is resumable
+            if support == 1.0:
+                output_path = RESULTS_PATH_SUPPORT_1
+            else:
+                output_path = RESULTS_PATH_SUPPORT_08
+
+            save_results(
+                results,
+                output_path,
             )
 
             print(
@@ -359,35 +365,30 @@ def evaluate_models():
                 f"  precision    = {precision:.4f}\n"
                 f"  activities   = {num_activities}\n"
                 f"  conformance  = {model_conformance:.4f}\n"
-                f"  runtime      = {row['runtime_seconds']:.2f}s"
+                f"  runtime      = {runtime_seconds:.4f}s"
             )
 
         except Exception:
-            print(f"FAILED: {model_file}")
+
+            print(f"FAILED: trial={trial}, " f"model={model_file}")
+
             traceback.print_exc()
 
     # --------------------------------------------------------
-    # Final sorting
+    # Final sorting / saving
     # --------------------------------------------------------
 
-    if not results.empty:
+    save_results(
+        results_by_support[1.0],
+        RESULTS_PATH_SUPPORT_1,
+    )
 
-        results = results.sort_values(
-            [
-                "log",
-                "algorithm",
-                "support",
-                "confidence",
-                "sup",
-            ]
-        ).reset_index(drop=True)
+    save_results(
+        results_by_support[0.8],
+        RESULTS_PATH_SUPPORT_08,
+    )
 
-        results.to_csv(
-            RESULTS_PATH,
-            index=False,
-        )
-
-    return results
+    return results_by_support
 
 
 # ============================================================
@@ -398,4 +399,6 @@ if __name__ == "__main__":
 
     results = evaluate_models()
 
-    print(f"\nFinished.\n" f"Results: {RESULTS_PATH}")
+    print("\nFinished.")
+    print(f"Support 1.0 results: " f"{RESULTS_PATH_SUPPORT_1}")
+    print(f"Support 0.8 results: " f"{RESULTS_PATH_SUPPORT_08}")
