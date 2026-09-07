@@ -559,8 +559,8 @@ if __name__ == "__main__":
     structural_rules = [
         InitializationRule("ER Registration"),
         AtMostOnceRule("ER Registration"),
-        AtMostOnceRule("ER Triage"),
-        AtMostOnceRule("ER Sepsis Triage"),
+        ExistenceRule("ER Triage"),
+        ExistenceRule("ER Sepsis Triage"),
         AtMostOnceRule("IV Liquid"),
         AtMostOnceRule("IV Antibiotics"),
         AtMostOnceRule("Admission NC"),
@@ -599,8 +599,8 @@ if __name__ == "__main__":
     ]
 
     guideline_rules = [
-        ResponseRule("ER Sepsis Triage", "IV Antibiotics"),
-        ResponseRule("ER Sepsis Triage", "LacticAcid"),
+        PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
+        PrecedenceRule("ER Sepsis Triage", "LacticAcid"),
     ]
     rule_levels = {
         "C1_structural": structural_rules,
