@@ -499,7 +499,6 @@ def apply_IM(
         ("concur", activity_concur),
         ("s_tau", s_tau),
         ("tau", n_tau),
-        ("flower", flower_model),
     ]
 
     for name, fallthrough in fallthroughs:
@@ -527,7 +526,7 @@ def apply_IM(
             im_function=apply_IM,
         )
 
-    return ProcessTree()
+    return flower_model(log)
 
 
 import signal
