@@ -1,6 +1,5 @@
-from inductive_miner.cuts import LoopCut
 from inductive_miner.im_utils import Decomposition
-from pm4py.objects.process_tree.obj import Operator
+from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules import AtMostOnceRule
 
 
@@ -8,11 +7,36 @@ def same_rules(rules_a, rules_b):
     return sorted(map(str, rules_a or [])) == sorted(map(str, rules_b or []))
 
 
+def build_flower_tree(activities):
+    """
+    Build the terminal flower model:
+
+        *(tau, X(a, b, c, ...))
+
+    No recursive mining is performed below this tree.
+    """
+    loop = ProcessTree(operator=Operator.LOOP)
+
+    tau = ProcessTree(label=None)
+    xor = ProcessTree(operator=Operator.XOR)
+
+    tau.parent = loop
+    xor.parent = loop
+    loop.children = [tau, xor]
+
+    for activity in activities:
+        leaf = ProcessTree(label=activity)
+        leaf.parent = xor
+        xor.children.append(leaf)
+
+    return loop
+
+
 def apply(
     log,
     rules=None,
     **kwargs,
-) -> Decomposition:
+):
     rules = rules or []
 
     activities = sorted({activity for trace in log for activity in trace})
@@ -32,7 +56,6 @@ def apply(
         sublogs = []
         projected_rules = []
 
-        # One branch per AtMostOnce constraint
         for activity in sorted(at_most_once):
             projected_log = [
                 [event for event in trace if event == activity] for trace in log
@@ -73,15 +96,4 @@ def apply(
             projected_rules=projected_rules,
         )
 
-    # The stadnard flower
-    redo_log = [[a] for a in activities]
-    groups = [set(), set(activities)]
-    redo_rules = LoopCut.project_rules(rules, groups) if rules else None
-
-    if redo_log == log and same_rules(redo_rules[1], rules):
-        return None
-    return Decomposition(
-        operator=Operator.LOOP,
-        sublogs=[[], redo_log],
-        projected_rules=redo_rules,
-    )
+    return build_flower_tree(activities)

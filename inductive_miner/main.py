@@ -351,16 +351,15 @@ def apply_IM_with_rules(
 
     flower = flower_model(log, rules=rules)
 
-    if flower is None:
+    if isinstance(flower, Decomposition):
         # Kept only for naive repair mechanism
-        return ProcessTree()
-
-    return mine_decomposition(
-        decomposition=flower,
-        im_function=apply_IM_with_rules,
-        repair_mode=repair_mode,
-        noise_threshold=noise_threshold,
-    )
+        return mine_decomposition(
+            decomposition=flower,
+            im_function=apply_IM_with_rules,
+            repair_mode=repair_mode,
+            noise_threshold=noise_threshold,
+        )
+    return flower
 
 
 def apply_IM(
@@ -547,6 +546,27 @@ signal.signal(signal.SIGALRM, timeout_handler)
 TIMEOUT_SECONDS = 30 * 60
 
 if __name__ == "__main__":
+    rules = [
+        ChainResponseRule("a", "b"),
+        ResponseRule("b", "c"),
+        ResponseRule("c", "d"),
+        ResponseRule("d", "a"),
+    ]
+
+    log = [
+        ["a", "b", "c", "d"],
+        ["a", "b", "c", "d"],
+        ["d", "a", "b", "c"],
+        ["c", "d", "a", "b"],
+    ]
+    print(
+        normalize_tree(
+            preprocess_and_apply_IM_with_rules(
+                log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.0
+            )
+        )
+    )
+    wait = input("Press Enter to continue...")
     sepsis_log = pm4py.read_xes("./inductive_miner/sepsis.xes")
     sepsis_log = pm4py.convert_to_dataframe(sepsis_log)
     sepsis_log = preprocess_log(sepsis_log)
@@ -659,124 +679,122 @@ if __name__ == "__main__":
 
     results = []
 
-results = []
+    for level_name, rules in rule_levels.items():
+        for repair_name, repair_mode in repair_modes.items():
+            for noise_threshold in noise_thresholds:
 
-for level_name, rules in rule_levels.items():
-    for repair_name, repair_mode in repair_modes.items():
-        for noise_threshold in noise_thresholds:
-
-            print("\n" + "=" * 80)
-            print(
-                f"Rules: {level_name} | "
-                f"Repair: {repair_name} | "
-                f"Noise: {noise_threshold}"
-            )
-            print("=" * 80)
-
-            signal.alarm(TIMEOUT_SECONDS)
-
-            try:
-                model = apply_IM_with_rules(
-                    log=log.copy(),
-                    rules=rules,
-                    repair_mode=repair_mode,
-                    noise_threshold=noise_threshold,
-                )
-
-                model = normalize_tree(model)
-
-                print(f"Final model: {model}")
-
-                fitness = fitness_alignment(log_org, model)
-                precision = precision_alignments_ebi_rust(log_org, model)
-
-                f1 = (
-                    2 * fitness * precision / (fitness + precision)
-                    if fitness + precision > 0
-                    else 0.0
-                )
-
-                rule_conf = rule_conformance_apply(
-                    model,
-                    rules,
-                    alphabet=alphabet,
-                )[0]
-
-                results.append(
-                    {
-                        "constraint_level": level_name,
-                        "num_rules": len(rules),
-                        "repair": repair_name,
-                        "noise_threshold": noise_threshold,
-                        "fitness": fitness,
-                        "precision": precision,
-                        "f1": f1,
-                        "rule_conformance": rule_conf,
-                        "model": str(model),
-                        "status": "completed",
-                    }
-                )
-
+                print("\n" + "=" * 80)
                 print(
-                    f"Fitness: {fitness:.3f}, "
-                    f"Precision: {precision:.3f}, "
-                    f"F1: {f1:.3f}, "
-                    f"Rule Conf: {rule_conf:.3f}"
+                    f"Rules: {level_name} | "
+                    f"Repair: {repair_name} | "
+                    f"Noise: {noise_threshold}"
                 )
+                print("=" * 80)
 
-            except RepairModeTimeout:
+                signal.alarm(TIMEOUT_SECONDS)
+
+                try:
+                    model = apply_IM_with_rules(
+                        log=log.copy(),
+                        rules=rules,
+                        repair_mode=repair_mode,
+                        noise_threshold=noise_threshold,
+                    )
+
+                    model = normalize_tree(model)
+
+                    print(f"Final model: {model}")
+
+                    fitness = fitness_alignment(log_org, model)
+                    precision = precision_alignments_ebi_rust(log_org, model)
+
+                    f1 = (
+                        2 * fitness * precision / (fitness + precision)
+                        if fitness + precision > 0
+                        else 0.0
+                    )
+
+                    rule_conf = rule_conformance_apply(
+                        model,
+                        rules,
+                        alphabet=alphabet,
+                    )[0]
+
+                    results.append(
+                        {
+                            "constraint_level": level_name,
+                            "num_rules": len(rules),
+                            "repair": repair_name,
+                            "noise_threshold": noise_threshold,
+                            "fitness": fitness,
+                            "precision": precision,
+                            "f1": f1,
+                            "rule_conformance": rule_conf,
+                            "model": str(model),
+                            "status": "completed",
+                        }
+                    )
+
+                    print(
+                        f"Fitness: {fitness:.3f}, "
+                        f"Precision: {precision:.3f}, "
+                        f"F1: {f1:.3f}, "
+                        f"Rule Conf: {rule_conf:.3f}"
+                    )
+
+                except RepairModeTimeout:
+                    print(
+                        f"TIMEOUT after 30 min: "
+                        f"{level_name} | {repair_name} | "
+                        f"noise={noise_threshold:.2f}"
+                    )
+
+                    results.append(
+                        {
+                            "constraint_level": level_name,
+                            "num_rules": len(rules),
+                            "repair": repair_name,
+                            "noise_threshold": noise_threshold,
+                            "fitness": None,
+                            "precision": None,
+                            "f1": None,
+                            "rule_conformance": None,
+                            "model": None,
+                            "status": "timeout",
+                        }
+                    )
+
+                finally:
+                    signal.alarm(0)
+        # ---------------------------------------------------------
+        # Compact summary
+        # ---------------------------------------------------------
+
+        print("\n\n=== SUMMARY ===")
+
+        for result in results:
+            if result.get("status") == "completed":
                 print(
-                    f"TIMEOUT after 30 min: "
-                    f"{level_name} | {repair_name} | "
-                    f"noise={noise_threshold:.2f}"
+                    f"{result['constraint_level']:15s} | "
+                    f"{result['repair']:13s} | "
+                    f"noise={result['noise_threshold']:.2f} | "
+                    f"fit={result['fitness']:.3f} | "
+                    f"prec={result['precision']:.3f} | "
+                    f"F1={result['f1']:.3f} | "
+                    f"RC={result['rule_conformance']:.3f} | "
+                    f"status=completed"
+                )
+            else:
+                print(
+                    f"{result['constraint_level']:15s} | "
+                    f"{result['repair']:13s} | "
+                    f"noise={result['noise_threshold']:.2f} | "
+                    f"status={result.get('status', 'unknown')}"
                 )
 
-                results.append(
-                    {
-                        "constraint_level": level_name,
-                        "num_rules": len(rules),
-                        "repair": repair_name,
-                        "noise_threshold": noise_threshold,
-                        "fitness": None,
-                        "precision": None,
-                        "f1": None,
-                        "rule_conformance": None,
-                        "model": None,
-                        "status": "timeout",
-                    }
-                )
+        results_df = pd.DataFrame(results)
 
-            finally:
-                signal.alarm(0)
-    # ---------------------------------------------------------
-    # Compact summary
-    # ---------------------------------------------------------
-
-    print("\n\n=== SUMMARY ===")
-
-    for result in results:
-        if result.get("status") == "completed":
-            print(
-                f"{result['constraint_level']:15s} | "
-                f"{result['repair']:13s} | "
-                f"noise={result['noise_threshold']:.2f} | "
-                f"fit={result['fitness']:.3f} | "
-                f"prec={result['precision']:.3f} | "
-                f"F1={result['f1']:.3f} | "
-                f"RC={result['rule_conformance']:.3f} | "
-                f"status=completed"
-            )
-        else:
-            print(
-                f"{result['constraint_level']:15s} | "
-                f"{result['repair']:13s} | "
-                f"noise={result['noise_threshold']:.2f} | "
-                f"status={result.get('status', 'unknown')}"
-            )
-
-    results_df = pd.DataFrame(results)
-
-    results_df.to_csv(
-        "./inductive_miner/results_sepsis.csv",
-        index=False,
-    )
+        results_df.to_csv(
+            "./inductive_miner/results_sepsis.csv",
+            index=False,
+        )

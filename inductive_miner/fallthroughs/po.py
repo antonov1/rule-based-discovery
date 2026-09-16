@@ -29,6 +29,7 @@ from utils.directly_follows_graph import DirectlyFollowsGraph
 class RuleBasedPO:
     groups: List[Set[str]]
     edges: Set[Tuple[int, int]]
+    non_refinable: List[Set[str]]
 
 
 def abstract_dfg(
@@ -406,6 +407,11 @@ def handle_chain_components(
         return RuleBasedPO(
             groups=merged_groups,
             edges=set(reduced_graph.edges),
+            non_refinable=[
+                group
+                for group in merged_groups
+                if any(protected <= group for protected in po.non_refinable)
+            ],
         )
 
     except nx.NetworkXAlgorithmError:
@@ -473,7 +479,11 @@ def detect_rule_based_po(
 
     components = get_chain_components(rules, alphabet)
     components = merge_components_by_not_coexistence(components, rules)
+    merged_components = components.copy()
     components = merge_components_by_scc(components, activity_graph)
+    print(f"Components after merging by SCC: {components}")
+    components_not_to_refine = [c for c in components if c not in merged_components]
+    print(f"What not to refine: ")
 
     component_of = {}
 
@@ -526,6 +536,7 @@ def detect_rule_based_po(
     po = RuleBasedPO(
         groups=components,
         edges=set(block_graph.edges),
+        non_refinable=components_not_to_refine,
     )
     return handle_chain_components(po, rules, dfg)
 
@@ -654,42 +665,70 @@ def po_to_parallel_sequence_branches(
     branches: List[List[Set[str]]] = []
 
     for weak_nodes in nx.connected_components(graph.to_undirected()):
-
         weak_nodes = set(weak_nodes)
-        local_layers = topological_layers_for_nodes(graph, weak_nodes)
+
+        local_layers = topological_layers_for_nodes(
+            graph,
+            weak_nodes,
+        )
 
         if local_layers is None:
-
             return None
 
-        branch = []
+        branch: List[Set[str]] = []
 
         for layer in local_layers:
-            layer_group = set().union(*(po.groups[i] for i in layer))
+            for group_idx in layer:
+                group = set(po.groups[group_idx])
 
-            split_layers = split_group_by_rules(
-                layer_group,
-                rules,
-            )
-            branch.extend(split_layers)
+                # SCC-created groups must remain intact and are
+                # left for recursive refinement.
+                if group in po.non_refinable:
+                    branch.append(group)
+                else:
+                    branch.extend(
+                        split_group_by_rules(
+                            group,
+                            rules,
+                        )
+                    )
+
+        if not branch:
+            continue
 
         branch_alphabet = set().union(*branch)
-        branch_rules = supported_rules_alphabet(branch_alphabet, rules)
-        branch = merge_groups_connected_by_not_coexistence(branch, branch_rules)
-        branch = merge_groups_connected_by_chain_rules(branch, branch_rules)
-        # ---- LABEL SPLITTING HERE ----
+        branch_rules = supported_rules_alphabet(
+            branch_alphabet,
+            rules,
+        )
+
+        branch = merge_groups_connected_by_not_coexistence(
+            branch,
+            branch_rules,
+        )
+
+        branch = merge_groups_connected_by_chain_rules(
+            branch,
+            branch_rules,
+        )
+
         if len(branch) == 1:
-            split = try_label_splitting(branch[0], branch_rules)
+            group = branch[0]
+
+            split = try_label_splitting(
+                group,
+                branch_rules,
+            )
+
             if split is not None:
                 branch = split
-        # ------------------------------
+
         if branch:
             branches.append(branch)
 
     if not branches:
         return None
 
-    # Now this is checked AFTER internal chain splitting.
     if len(branches) == 1 and len(branches[0]) <= 1:
         return None
 
@@ -819,12 +858,13 @@ if __name__ == "__main__":
     # d = Dexamethasone Start
     # v = Invasive Ventilation Start
     # e = ECMO Start
-    alphabet = {"h", "n", "d", "v", "e"}
+    alphabet = {"a", "b", "c", "d"}
 
     rules = [
-        ChainResponseRule("n", "d"),
-        PrecedenceRule("v", "e"),
-        NotCoExistenceRule("h", "n"),
+        ChainResponseRule("a", "b"),
+        ResponseRule("b", "c"),
+        ResponseRule("c", "d"),
+        ResponseRule("d", "a"),
     ]
 
     log = [

@@ -1315,6 +1315,6 @@ if __name__ == "__main__":
         start_idx=0,
         num_trials=100,
         max_workers=8,
-        trial_timeout=600,
+        trial_timeout=900,
         max_attempts_per_trial=None,
     )
