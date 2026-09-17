@@ -44,7 +44,7 @@ uv sync
 ### 2. Python Usage
 
 ```python
-from inductive_miner import apply_IM_with_rules
+from inductive_miner import apply_RBIM
 from inductive_miner.rules import PrecedenceRule, ResponseRule
 from inductive_miner.im_utils import RepairVariant
 
@@ -55,7 +55,7 @@ list_of_rules = [
 ]
 
 # 2. Mine the model
-   model = apply_IM_with_rules(
+   model = apply_RBIM(
          log=log,
          rules=list_of_rules,
          repair_mode=RepairVariant.EditDistance,

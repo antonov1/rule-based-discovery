@@ -24,6 +24,8 @@ from rules import (
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
+ENABLE_LABEL_SPLITTING = True
+
 
 @dataclass(frozen=True)
 class RuleBasedPO:
@@ -352,6 +354,7 @@ def handle_chain_components(
         return po
 
     if not nx.is_directed_acyclic_graph(g):
+        print(f"Graph is not a DAG: {g.edges}")
         return None
     closure = nx.transitive_closure_dag(g)
     abstracted_dfg = abstract_dfg(dfg, po.groups)
@@ -399,6 +402,7 @@ def handle_chain_components(
 
     if len(merged_groups) <= 1:
         # Nothing can be done
+        print(f"Merged groups are too few: {merged_groups}")
 
         return None
     try:
@@ -422,13 +426,15 @@ def detect_label_splitting(
     alphabet: Set[str],
     boundary_nodes: Set[str],
 ) -> Optional[RuleBasedPO]:
-    if len(boundary_nodes) != 1:
+    if len(boundary_nodes) != 1 or not ENABLE_LABEL_SPLITTING:
         return None
 
     label_splitting = set(boundary_nodes)
     remaining_acts = alphabet - label_splitting
     return RuleBasedPO(
-        [label_splitting, remaining_acts, label_splitting], edges={(0, 1), (1, 2)}
+        [label_splitting, remaining_acts, label_splitting],
+        edges={(0, 1), (1, 2)},
+        non_refinable=[],
     )
 
 
@@ -481,9 +487,7 @@ def detect_rule_based_po(
     components = merge_components_by_not_coexistence(components, rules)
     merged_components = components.copy()
     components = merge_components_by_scc(components, activity_graph)
-    print(f"Components after merging by SCC: {components}")
     components_not_to_refine = [c for c in components if c not in merged_components]
-    print(f"What not to refine: ")
 
     component_of = {}
 
@@ -510,11 +514,15 @@ def detect_rule_based_po(
     }
 
     if start_components & end_components:
+        print(
+            f"Start components and end components overlap: {start_components & end_components}"
+        )
         return None
     # Initialization/End as weak global ordering constraints.
     #
     # If Initialization(A), then A's block should be before all other blocks
     # unless this creates a cycle.
+
     for start_component in start_components:
         for other in block_graph.nodes:
             if other != start_component:
@@ -527,11 +535,23 @@ def detect_rule_based_po(
             if other != end_component:
                 block_graph.add_edge(other, end_component)
     if not nx.is_directed_acyclic_graph(block_graph):
+        print(f"Block graph is not a DAG: {block_graph.edges}")
+        cyclic_components = set()
+        for scc in nx.strongly_connected_components(block_graph):
+            if len(scc) > 1:
+                cyclic_components.update(scc)
+        cyclic_activities = set().union(*(components[i] for i in cyclic_components))
+        boundary_nodes = (start_nodes | end_nodes) & cyclic_activities
+        if len(boundary_nodes) == 1:
+            return detect_label_splitting(
+                alphabet,
+                boundary_nodes,
+            )
         return None
-
     # If there is more than one component and no block-level edges, this is still
     # a valid partial order: all components are unordered/parallel.
     if block_graph.number_of_nodes() == 0:
+        print(f"Block graph has no nodes: {block_graph.edges}")
         return None
     po = RuleBasedPO(
         groups=components,
@@ -606,6 +626,8 @@ def try_label_splitting(
     group: Set[str],
     rules: List[AbstractRule],
 ) -> Optional[List[Set[str]]]:
+    if not ENABLE_LABEL_SPLITTING:
+        return None
     graph = nx.DiGraph()
     graph.add_nodes_from(group)
     boundary_candidates = []
@@ -809,6 +831,7 @@ def apply(
 
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
     po = detect_rule_based_po(rules, alphabet, dfg)
+    print(f"Detected PO [FINAL]: {po}")
     if po is None:
         return None
 
@@ -853,11 +876,6 @@ if __name__ == "__main__":
     from rules import ChainResponseRule, NotCoExistenceRule, PrecedenceRule
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
-    # h = High-Flow Start
-    # n = NIV Start
-    # d = Dexamethasone Start
-    # v = Invasive Ventilation Start
-    # e = ECMO Start
     alphabet = {"a", "b", "c", "d"}
 
     rules = [
