@@ -5,23 +5,37 @@
 [![Streamlit](https://img.shields.io/badge/app-Streamlit-ff4b4b.svg)](https://streamlit.io/)
 [![Status](https://img.shields.io/badge/status-experimental-orange.svg)](#--project-status)
 
-**Rule-Based Inductive Miner** is an experimental process mining framework that integrates **declarative constraints (Declare rules)** directly into the recursive discovery loop of the **Inductive Miner (IM)**.
+**Rule-Based Inductive Miner (RBIM)** is an experimental process discovery
+algorithm that integrates **declarative constraints (Declare rules)** directly
+into the recursive discovery procedure of the **Inductive Miner (IM)**.
 
-By pairing inductive splitting operators with domain guards, rule projection,
-and trace/event repair strategies, it discovers sound process trees even when
-event data is noisy, incomplete, or partially non-conforming.
+RBIM retains the data-driven discovery capabilities of IM while incorporating
+domain knowledge through operator-based rule checks, recursive rule projection,
+and rule-driven structure approximation. This allows declarative constraints to
+guide discovery when the observed event data is incomplete, partially
+non-conforming, or does not provide a suitable data-driven decomposition.
 
 ---
 
 ## ✨ Key Features
 
-- **Hybrid Discovery:** Combines imperative process tree discovery (Inductive Miner) with declarative constraints.
-- **Rule Extraction:** Extract domain rules automatically from **unstructured text** or **event data**.
-- **Operator-Based Guards:** Ensures candidate process tree cuts (XOR, Sequence, Parallel, Loop) respect specified business rules.
-- **Subproblem Rule Projection:** Automatically projects declarative constraints onto sub-logs during recursive decomposition.
-- **4 Data Repair Strategies:** Handles non-conforming traces via customizable log repair algorithms.
-- **Comprehensive Metrics:** Includes fitness, precision, and compliance evaluation utilities.
-- **Interactive UI:** Built-in Streamlit app for visual experimentation and parameter tuning.
+- **Rule-Guided Discovery:** Integrates declarative constraints directly into
+  Inductive Miner-based process discovery.
+- **Operator-Based Rule Checks:** Checks candidate process tree cuts
+  (XOR, Sequence, Parallel, Loop) against the specified rules.
+- **Subproblem Rule Projection:** Projects declarative constraints onto
+  subproblems during recursive decomposition.
+- **Rule-Driven Structure Approximation:** Derives additional process structure
+  from declarative constraints when no suitable data-driven decomposition is
+  available.
+- **Optional Repair Strategies:** Supports repair mechanisms for reconsidering
+  rejected data-driven decompositions.
+- **Rule Extraction:** Includes utilities for extracting domain rules from
+  **unstructured text** or **event data**.
+- **Evaluation Metrics:** Includes fitness, precision, and rule-conformance
+  evaluation utilities.
+- **Interactive UI:** Built-in Streamlit app for experimentation and parameter
+  tuning.
 
 ---
 
@@ -29,7 +43,8 @@ event data is noisy, incomplete, or partially non-conforming.
 
 ### 1. Installation
 
-This project uses [uv](https://github.com/astral-sh/uv) for fast, deterministic dependency management.
+This project uses [uv](https://github.com/astral-sh/uv) for dependency
+management.
 
 ```bash
 # Install uv (if not already installed)
@@ -48,102 +63,69 @@ from inductive_miner import apply_RBIM
 from inductive_miner.rules import PrecedenceRule, ResponseRule
 from inductive_miner.im_utils import RepairVariant
 
-# 1. Define declarative constraints
-list_of_rules = [
+# Define declarative constraints
+rules = [
     PrecedenceRule("Approve Request", "Pay Check"),
     ResponseRule("Receive Order", "Send Confirmation"),
 ]
 
-# 2. Mine the model
-   model = apply_RBIM(
-         log=log,
-         rules=list_of_rules,
-         repair_mode=RepairVariant.EditDistance,
-         noise_threshold=0,
-   )
-
+# Mine the model
+model = apply_RBIM(
+    log=log,
+    rules=rules,
+    repair_mode=RepairVariant.EditDistance,
+    noise_threshold=0,
+)
 ```
 
-> **Tip:** Check out `inductive_miner/examples.py` for complete, runnable scripts using toy event logs.
-
----
-
-## 🚩 Core Architecture
-
-```text
-                       +----------------------+
-                       | Raw / Noisy Log      |
-                       | + Declarative Rules  |
-                       +----------+----------+
-                                   |
-                       +----------v----------+
-                       | Static Operator      |
-                       | Guard Evaluation     |
-                       +----------+----------+
-                                  |
-                  +-----------------------+-----------------------+
-                  |                                             |
-         [Log Conforms]                          [Log Non-Conforming]
-                   |                                             |
-                   |                          +----------v----------+
-                   |                          | Apply Repair Strategy|
-                   |                          | (Trace/Event/Edit)   |
-                   |                          +----------+----------+
-                   |                                             |
-                   +-----------------------+----------------------+
-                                   |
-                        +----------v----------+
-                        |  Recursive Split     |
-                        |  + Rule Projection   |
-                        +----------+----------+
-                                   |
-                       +----------v----------+
-                        | Discovered Tree /    |
-                        | Compliant Submodels  |
-                       +----------------------+
-```
-
-1. **Operator Guards:** Declarative rules evaluate candidate process tree operators (Sequence, Exclusive Choice, Parallel, Loop) to filter out cuts that violate domain semantics.
-2. **Adaptive Log Repair:** If an operator is semantically valid but the log contains violations, a repair strategy modifies the sub-log to enable the cut.
-3. **Rule Projection:** As logs are partitioned into subproblems, rules are mathematically projected onto the relevant sub-alphabets, maintaining constraint satisfaction across the recursion.
+> **Tip:** Check out `inductive_miner/examples.py` for complete, runnable
+> examples using toy event logs.
 
 ---
 
 ## 🟠 Data Repair Strategies
 
-| Strategy          | Description                                                                     | Best Used When...                                                       |
-| :---------------- | :------------------------------------------------------------------------------ | :---------------------------------------------------------------------- |
-| **Naïve / None**  | Leaves the log untouched; strictly falls back to base Inductive Miner behavior. | You want zero artificial manipulation of event data.                    |
-| **Trace-Level**   | Filters out entire traces that violate the target operator's constraints.       | Non-conforming traces are considered erroneous anomalies/outliers.      |
-| **Event-Level**   | Isolates and removes specific violating events within traces.                   | Traces are long and mostly valid, but contain stray activities.         |
-| **Edit-Distance** | Uses minimum-cost string/trace alignment (insertion/deletion) to satisfy rules. | Preserving maximum trace volume while enforcing compliance is critical. |
+RBIM supports optional repair strategies that can be used during discovery.
+
+| Strategy | Description |
+| :--- | :--- |
+| **Naïve / None** | Leaves the event data unchanged. |
+| **Trace-Level** | Applies repair at the trace level. |
+| **Event-Level** | Applies repair at the event level. |
+| **Edit-Distance** | Uses edit-distance-based repair. |
+
+Repair is optional. If no repair strategy is used, RBIM can still use its
+rule-driven mechanisms to derive a model that incorporates the supplied
+constraints.
 
 ---
 
 ## 📟 Supported Declarative Rules
 
-The package supports major templates from the **Declare** family:
+The package supports the following templates from the **Declare** family:
 
-| Category              | Rule Template                | Class                    |
-| :-------------------- | :--------------------------- | :----------------------- |
-| **Existence**         | Existence (A)                | `ExistenceRule`          |
-|                       | At Most Once (A)             | `AtMostOnceRule`         |
-|                       | Initialization (A)           | `InitializationRule`     |
-|                       | End (A)                      | `EndRule`                |
-| **Relation**          | Precedence (A -> B)          | `PrecedenceRule`         |
-|                       | Response (A -> B)            | `ResponseRule`           |
-|                       | Responded Existence (A -> B) | `RespondedExistenceRule` |
-|                       | Co-Existence (A <-> B)       | `CoExistenceRule`        |
-|                       | Chain Precedence (A => B)    | `ChainPrecedenceRule`    |
-|                       | Chain Response (A => B)      | `ChainResponseRule`      |
-| **Negative Relation** | Not Co-Existence (A !<-> B)  | `NotCoExistenceRule`     |
-|                       | Not Succession (A !-> B)     | `NotSuccessionRule`      |
+| Category | Rule Template | Class |
+| :--- | :--- | :--- |
+| **Existence** | Existence (A) | `ExistenceRule` |
+| | At Most Once (A) | `AtMostOnceRule` |
+| | Initialization (A) | `InitializationRule` |
+| | End (A) | `EndRule` |
+| **Relation** | Precedence (A → B) | `PrecedenceRule` |
+| | Response (A → B) | `ResponseRule` |
+| | Responded Existence (A ↔ B) | `RespondedExistenceRule` |
+| | Co-Existence (A ↔ B) | `CoExistenceRule` |
+| | Chain Precedence (A ⇒ B) | `ChainPrecedenceRule` |
+| | Chain Response (A ⇒ B) | `ChainResponseRule` |
+| **Negative Relation** | Not Co-Existence (A ↮ B) | `NotCoExistenceRule` |
+| | Not Succession (A ↛ B) | `NotSuccessionRule` |
 
 ---
 
 ## 💻 Interactive Web UI
 
-A built-in [Streamlit](https://streamlit.io/) interface allows you to upload logs, configure declarative constraints, select repair strategies, and inspect discovered process trees interactively.
+A built-in [Streamlit](https://streamlit.io/) interface allows you to upload
+event logs, configure declarative constraints, select discovery parameters and
+repair strategies, and inspect discovered process trees interactively.
 
 ```bash
 uv run streamlit run app.py
@@ -155,14 +137,16 @@ uv run streamlit run app.py
 
 ```text
 .
-├── app.py                 # Streamlit web application entry point
-├── inductive_miner/        # Core IM engine, guards, operators, and repair logic
-│   └── examples.py         # Toy logs and end-to-end usage examples
-│   ├── rules/           # Rule definitions and projection mechanics
-├── rule_extraction/       # Extract rules from text (NLP/LLM) or event data
-├── metrics/              # Conformance, fitness, precision, and compliance metrics
-├── tests/               # Unit and integration test suite
-┘── pyproject.toml         # Project configuration and dependency lock
+├── app.py                  # Streamlit web application entry point
+├── inductive_miner/        # Rule-Based Inductive Miner implementation
+│   ├── cuts/               # Cut detection and rule checks
+│   ├── fall_throughs/      # Data- and rule-based fall-throughs
+│   ├── rules/              # Rule definitions and projection
+│   └── examples.py         # Toy logs and usage examples
+├── rule_extraction/        # Rule extraction from text or event data
+├── metrics/                # Fitness, precision, and rule-conformance metrics
+├── tests/                  # Unit and integration tests
+└── pyproject.toml          # Project configuration and dependencies
 ```
 
 ---
@@ -186,7 +170,9 @@ uv run pytest --cov=inductive_miner --cov=rule_extraction
 ## ⚠️ Project Status
 
 > **Status: Experimental**
-> This project is an active research implementation designed to explore hybrid declarative-imperative discovery algorithms. APIs may evolve over time.
+>
+> This project is an active research implementation of the Rule-Based
+> Inductive Miner. APIs and implementation details may evolve over time.
 
 ---
 
