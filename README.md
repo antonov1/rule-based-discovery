@@ -1,75 +1,46 @@
-# Rule-Based Inductive Miner 🚀
+# Rule-Based Inductive Miner
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/dependency_manager-uv-purple.svg)](https://github.com/astral-sh/uv)
 [![Streamlit](https://img.shields.io/badge/app-Streamlit-ff4b4b.svg)](https://streamlit.io/)
-[![Status](https://img.shields.io/badge/status-experimental-orange.svg)](#--project-status)
+[![Status](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 
-**Rule-Based Inductive Miner (RBIM)** is an experimental process discovery
-algorithm that integrates **declarative constraints (Declare rules)** directly
-into the recursive discovery procedure of the **Inductive Miner (IM)**.
+Rule-Based Inductive Miner (RBIM) is an experimental extension of the
+Inductive Miner that incorporates declarative constraints into process
+discovery.
 
-RBIM retains the data-driven discovery capabilities of IM while incorporating
-domain knowledge through operator-based rule checks, recursive rule projection,
-and rule-driven structure approximation. This allows declarative constraints to
-guide discovery when the observed event data is incomplete, partially
-non-conforming, or does not provide a suitable data-driven decomposition.
+Instead of checking constraints only after a model has been discovered, RBIM
+uses Declare rules during recursive decomposition. Candidate cuts are checked
+against the rule set, rules are projected onto the resulting subproblems, and
+constraints can be used to approximate process structure when the log alone
+does not yield a suitable decomposition.
 
----
+The implementation also contains several optional repair strategies for cases
+where a data-driven decomposition conflicts with the supplied rules.
 
-## ✨ Key Features
+## Installation
 
-- **Rule-Guided Discovery:** Integrates declarative constraints directly into
-  Inductive Miner-based process discovery.
-- **Operator-Based Rule Checks:** Checks candidate process tree cuts
-  (XOR, Sequence, Parallel, Loop) against the specified rules.
-- **Subproblem Rule Projection:** Projects declarative constraints onto
-  subproblems during recursive decomposition.
-- **Rule-Driven Structure Approximation:** Derives additional process structure
-  from declarative constraints when no suitable data-driven decomposition is
-  available.
-- **Optional Repair Strategies:** Supports repair mechanisms for reconsidering
-  rejected data-driven decompositions.
-- **Rule Extraction:** Includes utilities for extracting domain rules from
-  **unstructured text** or **event data**.
-- **Evaluation Metrics:** Includes fitness, precision, and rule-conformance
-  evaluation utilities.
-- **Interactive UI:** Built-in Streamlit app for experimentation and parameter
-  tuning.
-
----
-
-## ⚡ Quickstart
-
-### 1. Installation
-
-This project uses [uv](https://github.com/astral-sh/uv) for dependency
-management.
+The project requires Python 3.12+ and uses
+[uv](https://github.com/astral-sh/uv) for dependency management.
 
 ```bash
-# Install uv (if not already installed)
-pip install uv
-
-# Clone and install dependencies
 git clone https://github.com/antonov1/rule-based-discovery.git
-cd rule-based-inductive-miner
+cd rule-based-discovery
 uv sync
 ```
 
-### 2. Python Usage
+## Usage
 
 ```python
 from inductive_miner import apply_RBIM
 from inductive_miner.rules import PrecedenceRule, ResponseRule
 from inductive_miner.im_utils import RepairVariant
 
-# Define declarative constraints
 rules = [
     PrecedenceRule("Approve Request", "Pay Check"),
     ResponseRule("Receive Order", "Send Confirmation"),
 ]
 
-# Mine the model
 model = apply_RBIM(
     log=log,
     rules=rules,
@@ -78,101 +49,121 @@ model = apply_RBIM(
 )
 ```
 
-> **Tip:** Check out `inductive_miner/examples.py` for complete, runnable
-> examples using toy event logs.
+More examples using small synthetic logs can be found in
+`inductive_miner/examples.py`.
 
----
+## Discovery
 
-## 🟠 Data Repair Strategies
+RBIM follows the recursive structure of the Inductive Miner. At each
+decomposition step it considers the standard process-tree operators:
 
-RBIM supports optional repair strategies that can be used during discovery.
+- XOR
+- Sequence
+- Parallel
+- Loop
+
+Candidate decompositions are checked against the supplied declarative rules.
+When a decomposition is accepted, the relevant rules are projected onto its
+subproblems before discovery continues recursively.
+
+If the log does not provide a usable decomposition, RBIM can also use the rule
+set to derive additional structure.
+
+## Repair strategies
+
+Repair can be applied when a data-driven decomposition is rejected because of
+the rule set.
 
 | Strategy | Description |
-| :--- | :--- |
-| **Naïve / None** | Leaves the event data unchanged. |
-| **Trace-Level** | Applies repair at the trace level. |
-| **Event-Level** | Applies repair at the event level. |
-| **Edit-Distance** | Uses edit-distance-based repair. |
+| --- | --- |
+| `Naive` | No repair; use the original traces |
+| `Trace` | Trace-level repair |
+| `Event` | Event-level repair |
+| `EditDistance` | Edit-distance-based repair |
 
-Repair is optional. If no repair strategy is used, RBIM can still use its
-rule-driven mechanisms to derive a model that incorporates the supplied
-constraints.
+Repair is not required. Without it, RBIM can still fall back to rule-driven
+structure approximation.
 
----
+## Supported Declare rules
 
-## 📟 Supported Declarative Rules
+The following Declare templates are currently implemented:
 
-The package supports the following templates from the **Declare** family:
-
-| Category | Rule Template | Class |
-| :--- | :--- | :--- |
-| **Existence** | Existence (A) | `ExistenceRule` |
+| Category | Template | Class |
+| --- | --- | --- |
+| Existence | Existence (A) | `ExistenceRule` |
 | | At Most Once (A) | `AtMostOnceRule` |
 | | Initialization (A) | `InitializationRule` |
 | | End (A) | `EndRule` |
-| **Relation** | Precedence (A → B) | `PrecedenceRule` |
+| Relation | Precedence (A → B) | `PrecedenceRule` |
 | | Response (A → B) | `ResponseRule` |
 | | Responded Existence (A ↔ B) | `RespondedExistenceRule` |
 | | Co-Existence (A ↔ B) | `CoExistenceRule` |
 | | Chain Precedence (A ⇒ B) | `ChainPrecedenceRule` |
 | | Chain Response (A ⇒ B) | `ChainResponseRule` |
-| **Negative Relation** | Not Co-Existence (A ↮ B) | `NotCoExistenceRule` |
+| Negative relation | Not Co-Existence (A ↮ B) | `NotCoExistenceRule` |
 | | Not Succession (A ↛ B) | `NotSuccessionRule` |
 
----
+## Rule extraction
 
-## 💻 Interactive Web UI
+The repository also contains utilities for obtaining declarative rules from
+unstructured text and event data. These are located in `rule_extraction/`.
 
-A built-in [Streamlit](https://streamlit.io/) interface allows you to upload
-event logs, configure declarative constraints, select discovery parameters and
-repair strategies, and inspect discovered process trees interactively.
+## Evaluation
+
+Utilities for evaluating discovered models are provided in `metrics/`.
+Currently this includes fitness, precision, and rule-conformance measures.
+
+## Web interface
+
+A Streamlit interface is included for running experiments without using the
+Python API directly.
 
 ```bash
 uv run streamlit run app.py
 ```
 
----
+The interface can be used to load an event log, configure rules and discovery
+parameters, select a repair strategy, and inspect the resulting process tree.
 
-## 📦 Project Layout
+## Project structure
 
 ```text
 .
-├── app.py                  # Streamlit web application entry point
-├── inductive_miner/        # Rule-Based Inductive Miner implementation
-│   ├── cuts/               # Cut detection and rule checks
-│   ├── fall_throughs/      # Data- and rule-based fall-throughs
-│   ├── rules/              # Rule definitions and projection
-│   └── examples.py         # Toy logs and usage examples
-├── rule_extraction/        # Rule extraction from text or event data
-├── metrics/                # Fitness, precision, and rule-conformance metrics
-├── tests/                  # Unit and integration tests
-└── pyproject.toml          # Project configuration and dependencies
+├── app.py
+├── inductive_miner/
+│   ├── cuts/
+│   ├── fall_throughs/
+│   ├── rules/
+│   └── examples.py
+├── rule_extraction/
+├── metrics/
+├── tests/
+└── pyproject.toml
 ```
 
----
+The main RBIM implementation is under `inductive_miner/`. Cut detection and
+rule checks are implemented in `cuts/`, while fallback behavior is implemented
+in `fall_throughs/`.
 
-## 🕷️ Testing
+## Tests
 
-Run the automated test suite with `pytest`:
+Run the test suite with:
 
 ```bash
 uv run pytest
 ```
 
-To run with coverage reporting:
+For coverage:
 
 ```bash
 uv run pytest --cov=inductive_miner --cov=rule_extraction
 ```
 
----
+## Project status
 
-## ⚠️ Project Status
-
-> **Status: Experimental**
->
-> This project is an active research implementation of the Rule-Based
-> Inductive Miner. APIs and implementation details may evolve over time.
+This is a research implementation and is still experimental. The API,
+individual repair strategies, and parts of the discovery procedure may change
+as the approach develops.
 
 ---
 
