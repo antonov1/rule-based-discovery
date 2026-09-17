@@ -51,7 +51,7 @@ management.
 pip install uv
 
 # Clone and install dependencies
-git clone https://github.com/your-username/rule-based-inductive-miner.git
+git clone https://github.com/antonov1/rule-based-discovery.git
 cd rule-based-inductive-miner
 uv sync
 ```
