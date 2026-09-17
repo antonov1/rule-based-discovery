@@ -107,6 +107,7 @@ unstructured text and event data. These are located in `rule_extraction/`.
 Utilities for evaluating discovered models are provided in `metrics/`.
 Currently this includes fitness, precision, and rule-conformance measures.
 
+Fitness is computed using process-tree alignments as described by Schwanen, Pakusa, and van der Aalst [1]. The package also provides precision and rule-conformance measures.
 ## Web interface
 
 A Streamlit interface is included for running experiments without using the
@@ -158,6 +159,13 @@ uv run pytest --cov=inductive_miner --cov=rule_extraction
 This is a research implementation and is still experimental. The API,
 individual repair strategies, and parts of the discovery procedure may change
 as the approach develops.
+
+## References
+
+[1] C. T. Schwanen, W. Pakusa, and W. M. P. van der Aalst,
+"Process Tree Alignments," in *Enterprise Design, Operations, and Computing
+(EDOC 2024)*, Lecture Notes in Computer Science, vol. 15409, pp. 300–317,
+Springer, 2024. https://doi.org/10.1007/978-3-031-78338-8_16
 
 ---
 
