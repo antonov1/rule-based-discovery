@@ -7,18 +7,20 @@ requires-python = ">=3.12"
 dependencies = [
     "automata-lib>=9.2.0",
     "beautifulsoup4>=4.14.3",
+    "dotenv>=0.9.9",
     "galois==0.4.10",
     "gurobipy>=13.0.2",
     "matplotlib>=3.10.8",
     "mlxtend>=0.24.0",
     "networkx>=3.6.1",
     "pandas>=1.4.0",
-    "pm4py>=2.7.19.8",
-    "promoai==2.1.2",
+    "pm4py==2.7.23.6",
+    "powl>=2.3.7",
+    "promoai==2.2.1",
     "pytest>=9.0.2",
     "pyvis>=0.3.2",
     "rustxes>=0.2.11",
-    "streamlit==1.55.0",
+    "streamlit==1.56.0",
     "typing>=3.7",
 ]
 [tool.setuptools]

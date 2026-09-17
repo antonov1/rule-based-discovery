@@ -1,5 +1,5 @@
 from itertools import product
-from typing import List
+from typing import List, Set
 
 import networkx as nx
 import pandas as pd
@@ -27,7 +27,7 @@ class SequenceCut(BaseCut):
         self.dfg = dfg
 
     @staticmethod
-    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> Set[AbstractRule]:
         unsat_rules = []
         for rule in rules:
             if isinstance(rule, InitializationRule):
@@ -37,40 +37,67 @@ class SequenceCut(BaseCut):
                 if rule.target_activity not in groups[-1]:
                     unsat_rules.append(rule)
             elif isinstance(rule, NotCoExistenceRule):
-                group_a_idx = [
-                    i for i in range(len(groups)) if rule.activity_a in groups[i]
-                ]
-                group_a_idx = group_a_idx[0] if group_a_idx else None
-                group_b_idx = [
-                    i for i in range(len(groups)) if rule.activity_b in groups[i]
-                ]
-                group_b_idx = group_b_idx[0] if group_b_idx else None
+                group_a_indices = {
+                    i for i, group in enumerate(groups) if rule.activity_a in group
+                }
+
+                group_b_indices = {
+                    i for i, group in enumerate(groups) if rule.activity_b in group
+                }
+
                 if (
-                    group_a_idx is not None
-                    and group_b_idx is not None
-                    and group_a_idx != group_b_idx
+                    group_a_indices
+                    and group_b_indices
+                    and group_a_indices != group_b_indices
                 ):
                     unsat_rules.append(rule)
-            elif (
-                isinstance(rule, PrecedenceRule)
-                or isinstance(rule, ChainPrecedenceRule)
-                or isinstance(rule, ResponseRule)
-                or isinstance(rule, ChainResponseRule)
-            ):
-                group_a_idx = [
-                    i for i in range(len(groups)) if rule.activity_a in groups[i]
+            elif isinstance(rule, (ChainResponseRule, ResponseRule)):
+                a_indices = [
+                    i for i, group in enumerate(groups) if rule.activity_a in group
                 ]
-                group_a_idx = group_a_idx[0] if group_a_idx else None
-                group_b_idx = [
-                    i for i in range(len(groups)) if rule.activity_b in groups[i]
+                b_indices = [
+                    i for i, group in enumerate(groups) if rule.activity_b in group
                 ]
-                group_b_idx = group_b_idx[0] if group_b_idx else None
-                if (
-                    group_a_idx is not None
-                    and group_b_idx is not None
-                    and group_a_idx > group_b_idx
-                ):
-                    unsat_rules.append(rule)
+                if a_indices and b_indices:
+                    valid = False
+                    if set(a_indices) == set(b_indices):
+                        continue
+                    if isinstance(rule, ChainResponseRule):
+                        valid = all((a_idx + 1) in b_indices for a_idx in a_indices)
+
+                    elif isinstance(rule, ResponseRule):
+                        valid = all(
+                            any(a_idx < b_idx for b_idx in b_indices)
+                            for a_idx in a_indices
+                        )
+
+                    if not valid:
+                        unsat_rules.append(rule)
+
+            elif isinstance(rule, (PrecedenceRule, ChainPrecedenceRule)):
+                a_indices = [
+                    i for i, group in enumerate(groups) if rule.activity_a in group
+                ]
+                b_indices = [
+                    i for i, group in enumerate(groups) if rule.activity_b in group
+                ]
+
+                if a_indices and b_indices:
+                    valid = False
+                    if set(a_indices) == set(b_indices):
+                        continue
+                    if isinstance(rule, ChainPrecedenceRule):
+                        valid = all((b_idx - 1) in a_indices for b_idx in b_indices)
+
+                    elif isinstance(rule, PrecedenceRule):
+                        valid = all(
+                            any(a_idx < b_idx for a_idx in a_indices)
+                            for b_idx in b_indices
+                        )
+
+                    if not valid:
+                        unsat_rules.append(rule)
+
             elif isinstance(rule, NotSuccessionRule):
                 group_a_idx = [
                     i for i in range(len(groups)) if rule.activity_a in groups[i]
@@ -79,14 +106,14 @@ class SequenceCut(BaseCut):
                 group_b_idx = [
                     i for i in range(len(groups)) if rule.activity_b in groups[i]
                 ]
-                group_b_idx = group_b_idx[0] if group_b_idx else None
+                group_b_idx = group_b_idx[-1] if group_b_idx else None
                 if (
                     group_a_idx is not None
                     and group_b_idx is not None
                     and group_a_idx < group_b_idx
                 ):
                     unsat_rules.append(rule)
-        return unsat_rules
+        return set(unsat_rules)
 
     def __construct_transitive_successors_and_predecessors(
         self, activities: set, dfg: nx.DiGraph

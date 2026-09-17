@@ -32,6 +32,8 @@ def test_im():
         log = log_converter.apply(log, variant=log_converter.Variants.TO_DATA_FRAME)
 
         model_sim = apply_IM(log)
-        model_pm4py = inductive_miner.apply(df_to_event_log(log))
+        model_pm4py = inductive_miner.apply(
+            df_to_event_log(log),
+        )
         sim = pm4py.behavioral_similarity(model_sim, model_pm4py)
         assert sim == 1.0, f"Similarity is {sim} for test {i}"

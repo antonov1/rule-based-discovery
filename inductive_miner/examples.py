@@ -340,7 +340,7 @@ if __name__ == "__main__":
             f"Pre-Pruning Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_prepruned}"
         )
         model_constrainted = normalize_tree(
-            apply_IM_with_rules(
+            apply_RBIM(
                 ex["log"],
                 ex["rules"],
                 repair_mode=RepairVariant.TraceLevel,
@@ -358,7 +358,7 @@ if __name__ == "__main__":
             f"RIM (TL REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted}"
         )
         model_constrainted_el = normalize_tree(
-            apply_IM_with_rules(
+            apply_RBIM(
                 ex["log"],
                 ex["rules"],
                 repair_mode=RepairVariant.EventLevel,
@@ -372,7 +372,7 @@ if __name__ == "__main__":
             f"RIM (EL REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_el}"
         )
         model_constrainted_ed = normalize_tree(
-            apply_IM_with_rules(
+            apply_RBIM(
                 ex["log"],
                 ex["rules"],
                 repair_mode=RepairVariant.EditDistance,
@@ -386,7 +386,7 @@ if __name__ == "__main__":
             f"RIM (ED REPAIRS) Fitness is: {fit}; Precision: {prec}; Rule Conformance: {rule_conf}; Model: {model_constrainted_ed}"
         )
         model_constrainted_naive = normalize_tree(
-            apply_IM_with_rules(
+            apply_RBIM(
                 ex["log"],
                 ex["rules"],
                 repair_mode=RepairVariant.Naive,

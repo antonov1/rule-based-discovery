@@ -17,9 +17,21 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
+    InitializationRule,
     NotCoExistenceRule,
+    PrecedenceRule,
+    ResponseRule,
 )
 from utils.directly_follows_graph import DirectlyFollowsGraph
+
+ENABLE_LABEL_SPLITTING = True
+
+
+@dataclass(frozen=True)
+class RuleBasedPO:
+    groups: List[Set[str]]
+    edges: Set[Tuple[int, int]]
+    non_refinable: List[Set[str]]
 
 
 def abstract_dfg(
@@ -100,12 +112,6 @@ def abstract_dfg(
             )
 
     return new_dfg
-
-
-@dataclass(frozen=True)
-class RuleBasedPO:
-    groups: List[Set[str]]
-    edges: Set[Tuple[int, int]]
 
 
 def get_chain_components(
@@ -221,6 +227,86 @@ def merge_groups_connected_by_chain_rules(
     return groups
 
 
+def merge_components_by_scc(
+    components: List[Set[str]],
+    activity_graph: nx.DiGraph,
+) -> List[Set[str]]:
+    component_of = {
+        activity: i for i, component in enumerate(components) for activity in component
+    }
+
+    merge_graph = nx.Graph()
+    merge_graph.add_nodes_from(range(len(components)))
+
+    for scc in nx.strongly_connected_components(activity_graph):
+        component_ids = {
+            component_of[activity] for activity in scc if activity in component_of
+        }
+
+        for component_id in component_ids:
+            merge_graph.add_node(component_id)
+
+        component_ids = list(component_ids)
+        for i in range(len(component_ids) - 1):
+            merge_graph.add_edge(component_ids[i], component_ids[i + 1])
+
+    return [
+        set().union(*(components[i] for i in component_ids))
+        for component_ids in nx.connected_components(merge_graph)
+    ]
+
+
+def merge_groups_connected_by_not_coexistence(
+    groups: List[Set[str]],
+    rules: List[AbstractRule],
+) -> List[Set[str]]:
+    """
+    Merge sequence layers connected by NotCoExistence.
+
+    Since the groups form an ordered sequence, merging non-adjacent groups
+    requires merging the entire interval between them. The internal
+    NotCoExistence relation is then handled by recursive mining.
+    """
+    groups = [set(group) for group in groups]
+    rules = rules or []
+
+    changed = True
+
+    while changed:
+        changed = False
+
+        position = {
+            activity: index for index, group in enumerate(groups) for activity in group
+        }
+
+        for rule in rules:
+            if not isinstance(rule, NotCoExistenceRule):
+                continue
+
+            a = rule.activity_a
+            b = rule.activity_b
+
+            if a not in position or b not in position:
+                continue
+
+            i = position[a]
+            j = position[b]
+
+            if i == j:
+                continue
+
+            low, high = sorted((i, j))
+
+            merged_group = set().union(*groups[low : high + 1])
+
+            groups = groups[:low] + [merged_group] + groups[high + 1 :]
+
+            changed = True
+            break
+
+    return groups
+
+
 def calculate_weight(dfg, source, target) -> float:
     """
     Runs Dijkstra, treates DFG weights as inverses
@@ -264,17 +350,19 @@ def handle_chain_components(
     g = nx.DiGraph()
     g.add_nodes_from(range(len(po.groups)))
     g.add_edges_from(po.edges)
+    if len(g.nodes) == 1:
+        return po
 
     if not nx.is_directed_acyclic_graph(g):
+        print(f"Graph is not a DAG: {g.edges}")
         return None
-
     closure = nx.transitive_closure_dag(g)
     abstracted_dfg = abstract_dfg(dfg, po.groups)
 
     def comparable(i: int, j: int) -> bool:
         return i == j or closure.has_edge(i, j) or closure.has_edge(j, i)
 
-    new_edges = po.edges
+    new_edges = set(po.edges)
     for cmp in components_with_chain_rules:
         for other_cmp in g.nodes:
             if other_cmp == cmp:
@@ -288,9 +376,66 @@ def handle_chain_components(
                     if cost_o_cmp > cost_cmp_o
                     else new_edges.add((cmp, other_cmp))
                 )
-                # print(f"New edges: {new_edges}")
-    po.edges.update(new_edges)
-    return po
+
+    graph = nx.DiGraph()
+    graph.add_nodes_from(range(len(po.groups)))
+    graph.add_edges_from(new_edges)
+
+    # The newly oriented edges may introduce cycles, this is why we condense again
+    sccs = list(nx.strongly_connected_components(graph))
+
+    node_to_scc = {
+        node: scc_index for scc_index, scc in enumerate(sccs) for node in scc
+    }
+
+    merged_groups = [set().union(*(po.groups[node] for node in scc)) for scc in sccs]
+
+    merged_edges = {
+        (node_to_scc[source], node_to_scc[target])
+        for source, target in graph.edges
+        if node_to_scc[source] != node_to_scc[target]
+    }
+
+    condensed_graph = nx.DiGraph()
+    condensed_graph.add_nodes_from(range(len(merged_groups)))
+    condensed_graph.add_edges_from(merged_edges)
+
+    if len(merged_groups) <= 1:
+        # Nothing can be done
+        print(f"Merged groups are too few: {merged_groups}")
+
+        return None
+    try:
+        reduced_graph = nx.transitive_reduction(condensed_graph)
+
+        return RuleBasedPO(
+            groups=merged_groups,
+            edges=set(reduced_graph.edges),
+            non_refinable=[
+                group
+                for group in merged_groups
+                if any(protected <= group for protected in po.non_refinable)
+            ],
+        )
+
+    except nx.NetworkXAlgorithmError:
+        return None
+
+
+def detect_label_splitting(
+    alphabet: Set[str],
+    boundary_nodes: Set[str],
+) -> Optional[RuleBasedPO]:
+    if len(boundary_nodes) != 1 or not ENABLE_LABEL_SPLITTING:
+        return None
+
+    label_splitting = set(boundary_nodes)
+    remaining_acts = alphabet - label_splitting
+    return RuleBasedPO(
+        [label_splitting, remaining_acts, label_splitting],
+        edges={(0, 1), (1, 2)},
+        non_refinable=[],
+    )
 
 
 def detect_rule_based_po(
@@ -310,10 +455,10 @@ def detect_rule_based_po(
 
     cdg = build_cdg(rules, alphabet)
 
-    # print(
-    #    f"Constructed CDG with edges: {list(cdg.edges)} "
-    #    f"and nodes: {list(cdg.nodes)}"
-    # )
+    print(
+        f"Constructed CDG with edges: {list(cdg.edges)} "
+        f"and nodes: {list(cdg.nodes)}"
+    )
 
     activity_graph = cdg.subgraph(alphabet).copy()
 
@@ -326,23 +471,23 @@ def detect_rule_based_po(
     }
 
     if start_nodes & end_nodes:
-        return None
+        return detect_label_splitting(alphabet, start_nodes & end_nodes)
     # We require a PO to have at most one start and one end node. Otherwise, it is unsatisfiable because Init(A) and Init(B) cannot hold together.
     if len(start_nodes) > 1 or len(end_nodes) > 1:
         return None
+    print(f"Start nodes are: {start_nodes}")
+    print(f"End nodes are: {end_nodes}")
 
     if activity_graph.number_of_edges() == 0 and not start_nodes and not end_nodes:
         return None
-
-    if not nx.is_directed_acyclic_graph(activity_graph):
-        return None
+    # if not nx.is_directed_acyclic_graph(activity_graph):
+    #    return None
 
     components = get_chain_components(rules, alphabet)
     components = merge_components_by_not_coexistence(components, rules)
-
-    # print(
-    #    "Components after merging by chain rules and not co-existence: " f"{components}"
-    # )
+    merged_components = components.copy()
+    components = merge_components_by_scc(components, activity_graph)
+    components_not_to_refine = [c for c in components if c not in merged_components]
 
     component_of = {}
 
@@ -369,12 +514,15 @@ def detect_rule_based_po(
     }
 
     if start_components & end_components:
+        print(
+            f"Start components and end components overlap: {start_components & end_components}"
+        )
         return None
-
     # Initialization/End as weak global ordering constraints.
     #
     # If Initialization(A), then A's block should be before all other blocks
     # unless this creates a cycle.
+
     for start_component in start_components:
         for other in block_graph.nodes:
             if other != start_component:
@@ -386,49 +534,35 @@ def detect_rule_based_po(
         for other in block_graph.nodes:
             if other != end_component:
                 block_graph.add_edge(other, end_component)
-
     if not nx.is_directed_acyclic_graph(block_graph):
+        print(f"Block graph is not a DAG: {block_graph.edges}")
+        cyclic_components = set()
+        for scc in nx.strongly_connected_components(block_graph):
+            if len(scc) > 1:
+                cyclic_components.update(scc)
+        cyclic_activities = set().union(*(components[i] for i in cyclic_components))
+        boundary_nodes = (start_nodes | end_nodes) & cyclic_activities
+        if len(boundary_nodes) == 1:
+            return detect_label_splitting(
+                alphabet,
+                boundary_nodes,
+            )
         return None
-
     # If there is more than one component and no block-level edges, this is still
     # a valid partial order: all components are unordered/parallel.
     if block_graph.number_of_nodes() == 0:
+        print(f"Block graph has no nodes: {block_graph.edges}")
         return None
-
     po = RuleBasedPO(
         groups=components,
         edges=set(block_graph.edges),
+        non_refinable=components_not_to_refine,
     )
-
-    po = handle_chain_components(po, rules, dfg)
-
-    if po is None:
-        return None
-
-    po_graph = nx.DiGraph()
-    po_graph.add_nodes_from(range(len(po.groups)))
-    po_graph.add_edges_from(po.edges)
-
-    if not nx.is_directed_acyclic_graph(po_graph):
-        return None
-
-    if po_graph.number_of_edges() == 0:
-        return po
-
-    try:
-        reduced_graph = nx.transitive_reduction(po_graph)
-    except nx.NetworkXError:
-        return None
-
-    return RuleBasedPO(
-        groups=po.groups,
-        edges=set(reduced_graph.edges),
-    )
+    return handle_chain_components(po, rules, dfg)
 
 
 def topological_layers_for_nodes(
-    graph: nx.DiGraph,
-    nodes: Set[int],
+    graph: nx.DiGraph, nodes: Set[int]
 ) -> Optional[List[Set[int]]]:
     remaining = set(nodes)
     layers: List[Set[int]] = []
@@ -451,7 +585,7 @@ def topological_layers_for_nodes(
     return layers
 
 
-def split_group_by_chain_rules(
+def split_group_by_rules(
     group: Set[str],
     rules: List[AbstractRule],
 ) -> List[Set[str]]:
@@ -462,17 +596,81 @@ def split_group_by_chain_rules(
     graph.add_nodes_from(group)
 
     for rule in rules or []:
+        if not hasattr(rule, "activity_a"):
+            continue
+        a = rule.activity_a
+        b = rule.activity_b
+
+        if a not in group or b not in group:
+            continue
+
         if isinstance(rule, (ChainResponseRule, ChainPrecedenceRule)):
-            if rule.activity_a in group and rule.activity_b in group:
-                graph.add_edge(rule.activity_a, rule.activity_b)
+            graph.add_edge(a, b)
+
+        elif isinstance(rule, NotCoExistenceRule):
+            graph.add_edge(a, b)
+            graph.add_edge(b, a)
 
     if graph.number_of_edges() == 0:
         return [set(group)]
 
-    if not nx.is_directed_acyclic_graph(graph):
-        return [set(group)]
+    condensed = nx.condensation(graph)
 
-    return [set(layer) for layer in nx.topological_generations(graph) if layer]
+    return [
+        set().union(*(condensed.nodes[node]["members"] for node in generation))
+        for generation in nx.topological_generations(condensed)
+    ]
+
+
+def try_label_splitting(
+    group: Set[str],
+    rules: List[AbstractRule],
+) -> Optional[List[Set[str]]]:
+    if not ENABLE_LABEL_SPLITTING:
+        return None
+    graph = nx.DiGraph()
+    graph.add_nodes_from(group)
+    boundary_candidates = []
+    for rule in rules or []:
+        if isinstance(rule, InitializationRule):
+            boundary_candidates.append(rule.target_activity)
+
+        elif isinstance(
+            rule,
+            (
+                ResponseRule,
+                ChainResponseRule,
+                PrecedenceRule,
+                ChainPrecedenceRule,
+            ),
+        ):
+            a = rule.activity_a
+            b = rule.activity_b
+
+            if a in group and b in group and a != b:
+                graph.add_edge(a, b)
+    if len(graph.edges) == 0:
+        return None
+    for scc in nx.strongly_connected_components(graph):
+        if len(scc) <= 1:
+            continue
+        boundary = scc.pop()
+        if len(boundary_candidates) != 0:
+            boundary = boundary_candidates[0]
+
+        middle = set(group) - {boundary}
+
+        if not middle:
+            continue
+
+        candidate = [
+            {boundary},
+            middle,
+            {boundary},
+        ]
+
+        return candidate
+    return None
 
 
 def po_to_parallel_sequence_branches(
@@ -491,27 +689,61 @@ def po_to_parallel_sequence_branches(
     for weak_nodes in nx.connected_components(graph.to_undirected()):
         weak_nodes = set(weak_nodes)
 
-        local_layers = topological_layers_for_nodes(graph, weak_nodes)
+        local_layers = topological_layers_for_nodes(
+            graph,
+            weak_nodes,
+        )
 
         if local_layers is None:
             return None
 
-        branch = []
+        branch: List[Set[str]] = []
 
         for layer in local_layers:
-            layer_group = set().union(*(po.groups[i] for i in layer))
+            for group_idx in layer:
+                group = set(po.groups[group_idx])
 
-            split_layers = split_group_by_chain_rules(
-                layer_group,
-                rules,
-            )
+                # SCC-created groups must remain intact and are
+                # left for recursive refinement.
+                if group in po.non_refinable:
+                    branch.append(group)
+                else:
+                    branch.extend(
+                        split_group_by_rules(
+                            group,
+                            rules,
+                        )
+                    )
 
-            branch.extend(split_layers)
+        if not branch:
+            continue
 
         branch_alphabet = set().union(*branch)
-        branch_rules = supported_rules_alphabet(branch_alphabet, rules)
+        branch_rules = supported_rules_alphabet(
+            branch_alphabet,
+            rules,
+        )
 
-        branch = merge_groups_connected_by_chain_rules(branch, branch_rules)
+        branch = merge_groups_connected_by_not_coexistence(
+            branch,
+            branch_rules,
+        )
+
+        branch = merge_groups_connected_by_chain_rules(
+            branch,
+            branch_rules,
+        )
+
+        if len(branch) == 1:
+            group = branch[0]
+
+            split = try_label_splitting(
+                group,
+                branch_rules,
+            )
+
+            if split is not None:
+                branch = split
 
         if branch:
             branches.append(branch)
@@ -519,11 +751,10 @@ def po_to_parallel_sequence_branches(
     if not branches:
         return None
 
-    # Now this is checked AFTER internal chain splitting.
     if len(branches) == 1 and len(branches[0]) <= 1:
         return None
 
-    # print(f"Detected PO branches: {branches}")
+    print(f"Detected PO branches: {branches}")
 
     return branches
 
@@ -544,13 +775,11 @@ def mine_sequence_branch(
     branch_rules = supported_rules_alphabet(branch_alphabet, branch_rules)
 
     violations = SequenceCut.check_rules(branch_rules, groups)
-
     if violations:
         return None
 
     projections = SequenceCut(dfg).relaxed_projection(log, groups)
     projected_rules = SequenceCut.project_rules(branch_rules, groups)
-
     if len(projections) != len(groups):
         return None
 
@@ -571,7 +800,6 @@ def mine_sequence_branch(
 
     for i, projected_log in enumerate(projections):
         child_rules = projected_rules[i] if projected_rules else []
-
         child = im_function(
             projected_log,
             child_rules or [],
@@ -602,21 +830,19 @@ def apply(
         return None
 
     alphabet = set(dfg.nodes) - {ARTIFICIAL_NONE_NODE}
-
     po = detect_rule_based_po(rules, alphabet, dfg)
-    # print(f"Detected po is: {po}")
-
+    print(f"Detected PO [FINAL]: {po}")
     if po is None:
         return None
 
     branches = po_to_parallel_sequence_branches(po, rules)
-    branch_alphabets = [set().union(*branch) for branch in branches] if branches else []
     if branches is None:
         return None
+
+    branch_alphabets = [set().union(*branch) for branch in branches] if branches else []
     branch_trees = []
     projected_branch_rules = ConcurrentCut.project_rules(rules, branch_alphabets)
-    for idx in range(len(branches)):
-        branch_groups = branches[idx]
+    for idx, branch_groups in enumerate(branches):
         branch_rules = projected_branch_rules[idx] if projected_branch_rules else []
         branch_tree = mine_sequence_branch(
             im_function=im_function,
@@ -627,7 +853,6 @@ def apply(
             repair_mode=repair_mode,
             noise_threshold=noise_threshold,
         )
-
         if branch_tree is None:
             return None
 
@@ -635,8 +860,7 @@ def apply(
 
     if not branch_trees:
         return None
-    if len(branch_trees) == 1 and len(po.groups) == 1:
-        return None
+
     if len(branch_trees) == 1:
         return branch_trees[0]
 
@@ -649,38 +873,45 @@ def apply(
 
 
 if __name__ == "__main__":
-    from rules import ChainResponseRule, ExistenceRule
+    from rules import ChainResponseRule, NotCoExistenceRule, PrecedenceRule
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
+    alphabet = {"a", "b", "c", "d"}
+
     rules = [
-        ExistenceRule("m"),
-        ChainResponseRule("m", "r"),
-        ExistenceRule("r"),
+        ChainResponseRule("a", "b"),
+        ResponseRule("b", "c"),
+        ResponseRule("c", "d"),
+        ResponseRule("d", "a"),
     ]
 
-    # Concrete minimized version of the data
-    # many traces are ["m", "r"], with one trace ["r", "m", "r"].
-    log = (
-        [["m", "r"] for _ in range(20)]
-        + [["r", "m", "r"]]
-        + [["m", "r"] for _ in range(20)]
-    )
-
-    alphabet = {"m", "r"}
+    log = [
+        ["d", "h", "v", "e"],
+        ["n", "d", "v", "e"],
+        ["n", "v", "d", "e"],
+        ["n", "d", "e", "v"],
+    ]
 
     dfg = DirectlyFollowsGraph(log).graph
 
-    # print("DFG nodes:")
-    # print(list(dfg.nodes(data=True)))
+    print("DFG nodes:")
+    print(list(dfg.nodes(data=True)))
 
-    # print("DFG edges:")
-    # print(list(dfg.edges(data=True)))
+    print("DFG edges:")
+    print(list(dfg.edges(data=True)))
 
     po = detect_rule_based_po(rules, alphabet, dfg)
-    # print("Detected PO:")
-    # print(po)
+
+    print("Detected PO:")
+    print(po)
 
     if po is not None:
+        print("Groups:")
+        print(po.groups)
+
+        print("Edges:")
+        print(po.edges)
+
         branches = po_to_parallel_sequence_branches(po, rules)
         print("Branches:")
         print(branches)

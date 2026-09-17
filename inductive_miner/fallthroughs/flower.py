@@ -1,49 +1,99 @@
-from inductive_miner.cuts import LoopCut
-from inductive_miner.fallthroughs.fallthrough_utils import add_child
-from inductive_miner.im_utils import repair_mechanism, RepairVariant
+from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
+from rules import AtMostOnceRule
+
+
+def same_rules(rules_a, rules_b):
+    return sorted(map(str, rules_a or [])) == sorted(map(str, rules_b or []))
+
+
+def build_flower_tree(activities):
+    """
+    Build the terminal flower model:
+
+        *(tau, X(a, b, c, ...))
+
+    No recursive mining is performed below this tree.
+    """
+    loop = ProcessTree(operator=Operator.LOOP)
+
+    tau = ProcessTree(label=None)
+    xor = ProcessTree(operator=Operator.XOR)
+
+    tau.parent = loop
+    xor.parent = loop
+    loop.children = [tau, xor]
+
+    for activity in activities:
+        leaf = ProcessTree(label=activity)
+        leaf.parent = xor
+        xor.children.append(leaf)
+
+    return loop
 
 
 def apply(
-    im_function,
     log,
     rules=None,
-    repair_mode=RepairVariant.TraceLevel,
     **kwargs,
-) -> ProcessTree:
+):
+    rules = rules or []
+
     activities = sorted({activity for trace in log for activity in trace})
+
     if len(activities) < 2:
         return None
-    redo_log = [[a] for a in activities]
-    groups = [set(), set(activities)]
 
-    if rules:
-        unsat_rules = LoopCut.check_rules(rules, groups)
-        if unsat_rules:
-            return repair_mechanism(
-                log,
-                unsat_rules,
-                im_function,
-                rules,
-                repair_mode=repair_mode,
-                noise_threshold=kwargs.get("noise_threshold", 0.0),
+    at_most_once = {
+        rule.target_activity
+        for rule in rules
+        if isinstance(rule, AtMostOnceRule) and rule.target_activity in activities
+    }
+
+    if at_most_once:
+        remaining = set(activities) - at_most_once
+
+        sublogs = []
+        projected_rules = []
+
+        for activity in sorted(at_most_once):
+            projected_log = [
+                [event for event in trace if event == activity] for trace in log
+            ]
+
+            sublogs.append(projected_log)
+
+            projected_rules.append(
+                [
+                    rule
+                    for rule in rules
+                    if isinstance(rule, AtMostOnceRule)
+                    and rule.target_activity == activity
+                ]
             )
 
-    parent = ProcessTree(operator=Operator.LOOP)
-    do_child = ProcessTree()
-    proj_rules = LoopCut.project_rules(rules, groups)[1] if rules else None
-    redo_child = (
-        im_function(
-            redo_log,
-            proj_rules,
-            repair_mode=repair_mode,
-            noise_threshold=kwargs.get("noise_threshold", 0.0),
+        if remaining:
+            remaining_log = [
+                [event for event in trace if event in remaining] for trace in log
+            ]
+
+            sublogs.append(remaining_log)
+
+            remaining_rules = [
+                rule
+                for rule in rules
+                if not (
+                    isinstance(rule, AtMostOnceRule)
+                    and rule.target_activity in at_most_once
+                )
+            ]
+
+            projected_rules.append(remaining_rules)
+
+        return Decomposition(
+            operator=Operator.PARALLEL,
+            sublogs=sublogs,
+            projected_rules=projected_rules,
         )
-        if proj_rules
-        else im_function(redo_log)
-    )
 
-    add_child(parent, do_child)
-    add_child(parent, redo_child)
-
-    return parent
+    return build_flower_tree(activities)

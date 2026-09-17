@@ -4,7 +4,7 @@ import tempfile
 
 import pm4py
 import streamlit as st
-from inductive_miner.main import apply_IM_with_rules
+from inductive_miner.main import apply_RBIM
 from llm_connection.query import query_llm_for_declare_rules
 from metrics.fitness import fitness_token_based_tree as fitness_token_based
 from metrics.precision import precision_token_based_tree as precision_token_based
@@ -311,7 +311,7 @@ def rule_discovery():
             elif strategy == "From Text":
                 rules_to_consider = []
                 try:
-                    rules = query_llm_for_declare_rules(
+                    rules, _, _ = query_llm_for_declare_rules(
                         st.session_state["text_rule_description"],
                         activities=sorted(
                             set(
@@ -701,7 +701,7 @@ def miner_page():
         if "model" not in st.session_state:
             pass
 
-            st.session_state["model"] = apply_IM_with_rules(
+            st.session_state["model"] = apply_RBIM(
                 log=preprocess_log(st.session_state["event_log"]),
                 rules=st.session_state["used_rules"],
             )

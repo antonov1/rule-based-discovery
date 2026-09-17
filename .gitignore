@@ -255,3 +255,6 @@ __pycache__/
 
 *.txt
 /experiments/*
+/evaluation/*
+ebi_precision
+case_study

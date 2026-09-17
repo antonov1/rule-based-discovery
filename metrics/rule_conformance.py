@@ -7,6 +7,7 @@ from pm4py.algo.simulation.playout.petri_net.algorithm import (
     apply as playout_apply,
     Variants as PlayoutVariants,
 )
+from pm4py.objects.bpmn.obj import BPMN
 from pm4py.objects.process_tree.obj import ProcessTree
 from pm4py.objects.transition_system.obj import TransitionSystem
 from rules import AbstractRule
@@ -50,34 +51,44 @@ def weighted_conformance(
         if len(intersection.final_states) > 0:
             sup_unsat.append(sup)
             unsat_rules.append(rule)
-    return 1 - sum(sup_unsat) / sum(sup_all), unsat_rules
+    return 1 - sum(sup_unsat) / len(rules) * max(sup_all), unsat_rules
 
 
-def conformance(model: ProcessTree, rules: List[AbstractRule], alphabet: Set[str]):
-    if not len(rules):
-        return 1
-    ts = pm4py.convert.convert_to_reachability_graph(model)
-    for r in rules or []:
+def conformance(
+    model: ProcessTree | BPMN,
+    rules: List[AbstractRule],
+    alphabet: Set[str],
+):
+    if not rules:
+        return 1.0, []
+
+    alphabet = set(alphabet)
+    rule_alphabet = set()
+    for r in rules:
         if hasattr(r, "target_activity"):
-            alphabet.add(r.target_activity)
+            rule_alphabet.add(r.target_activity)
         if hasattr(r, "activity_a"):
-            alphabet.add(r.activity_a)
+            rule_alphabet.add(r.activity_a)
         if hasattr(r, "activity_b"):
-            alphabet.add(r.activity_b)
+            rule_alphabet.add(r.activity_b)
 
-    nfa = transition_system_to_nfa(ts, alphabet=alphabet)
-    # constructing accept_all automaton
+    other_symbol = "__OTHER__"
+    while other_symbol in rule_alphabet:
+        other_symbol += "_"
+    ts = pm4py.convert.convert_to_reachability_graph(model)
+    nfa_alphabet = rule_alphabet | {other_symbol}
+    nfa = transition_system_to_nfa(ts, alphabet=nfa_alphabet)
+
     unsat_rules = []
-    accept_all = DFA.universal_language(input_symbols=set(alphabet))
 
     for rule in rules:
-        rule_automaton = rule.to_automaton(alphabet=alphabet)
-        # to check, we need to see if the intersection of the model automaton and the negation of the rule automaton is empty
-        negated_rule_automaton = NFA.from_dfa(accept_all.difference(rule_automaton))
+        rule_automaton = rule.to_automaton(alphabet=nfa_alphabet)
+        negated_rule_automaton = NFA.from_dfa(~rule_automaton)
         intersection = nfa.intersection(negated_rule_automaton)
-        if len(intersection.final_states) > 0:
+        if intersection.final_states:
             unsat_rules.append(rule)
-    return 1 - len(unsat_rules) / len(rules), unsat_rules
+
+    return 1.0 - len(unsat_rules) / len(rules), unsat_rules
 
 
 def __extract_symbol(label, epsilon_symbol=""):
@@ -101,12 +112,18 @@ def transition_system_to_nfa(
     initial_state: str = "source1",
     sink_state: str = "sink1",
     epsilon_symbol: str = "",
+    other_symbol: str = "__OTHER__",
 ) -> NFA:
-    # returns an epsilon-NFA that accepts the same language as the transition system
     states = {str(state.name) for state in ts.states}
+
     if sink_state not in states or initial_state not in states:
         raise ValueError("Sink or initial state are not part of states")
+
+    nfa_alphabet = set(alphabet)
+    nfa_alphabet.add(other_symbol)
+
     transitions = {state: {} for state in states}
+
     for edge in ts.transitions:
         source = str(edge.from_state.name)
         target = str(edge.to_state.name)
@@ -117,17 +134,22 @@ def transition_system_to_nfa(
         if target not in states:
             raise ValueError(f"Transition target {target!r} is not in states.")
 
-        symbol = __extract_symbol(edge.name, epsilon_symbol=epsilon_symbol)
+        symbol = __extract_symbol(
+            edge.name,
+            epsilon_symbol=epsilon_symbol,
+        )
 
         if symbol != epsilon_symbol and symbol not in alphabet:
-            raise ValueError(
-                f"Transition label {symbol!r} is not in the provided alphabet {alphabet}."
-            )
+            symbol = other_symbol
 
-        transitions[source].setdefault(symbol, set()).add(target)
+        transitions[source].setdefault(
+            symbol,
+            set(),
+        ).add(target)
+
     return NFA(
         states=states,
-        input_symbols=set(alphabet),
+        input_symbols=nfa_alphabet,
         transitions=transitions,
         initial_state=initial_state,
         final_states={sink_state},

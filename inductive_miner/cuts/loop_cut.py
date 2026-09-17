@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 import networkx as nx
 import pandas as pd
@@ -27,7 +27,7 @@ class LoopCut(BaseCut):
         self.dfg = dfg
 
     @staticmethod
-    def check_rules(rules: List[AbstractRule], groups: List[set]) -> bool:
+    def check_rules(rules: List[AbstractRule], groups: List[set]) -> Set[AbstractRule]:
         unsat_rules = []
         _, group_rest = groups[0], groups[1:]
         for rule in rules:
@@ -68,13 +68,17 @@ class LoopCut(BaseCut):
                     rule.activity_b in group for group in group_rest
                 ):
                     unsat_rules.append(rule)
-
-            elif isinstance(rule, NotSuccessionRule) or isinstance(
-                rule, NotCoExistenceRule
-            ):
-                # regardless what you do, that's gonna be unsatisfied
-                unsat_rules.append(rule)
-        return unsat_rules
+            elif isinstance(rule, NotSuccessionRule):
+                a_present = any(rule.activity_a in group for group in groups)
+                b_present = any(rule.activity_b in group for group in groups)
+                if a_present and b_present:
+                    unsat_rules.append(rule)
+            elif isinstance(rule, NotCoExistenceRule):
+                if any(rule.activity_a in group for group in groups) and any(
+                    rule.activity_b in group for group in groups
+                ):
+                    unsat_rules.append(rule)
+        return set(unsat_rules)
 
     def discover(self) -> List[set]:
         # To enforce fall-throughs

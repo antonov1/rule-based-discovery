@@ -79,4 +79,9 @@ def build_signed_cdg(
     for r in rules or []:
         if isinstance(r, NotCoExistenceRule):
             negative_graph.add_edge(r.activity_a, r.activity_b)
+        elif isinstance(r, (RespondedExistenceRule, CoExistenceRule)):
+            positive_graph.add_edge(
+                r.activity_a,
+                r.activity_b,
+            )
     return positive_graph, negative_graph
