@@ -10,7 +10,7 @@ Inductive Miner that incorporates declarative constraints into process
 discovery.
 
 Instead of checking constraints only after a model has been discovered, RBIM
-uses Declare rules during recursive decomposition. Candidate cuts are checked
+uses Declare rules during recursive decomposition. Candidate decompositions are checked
 against the rule set, rules are projected onto the resulting subproblems, and
 constraints can be used to approximate process structure when the log alone
 does not yield a suitable decomposition.
