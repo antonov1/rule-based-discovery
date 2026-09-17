@@ -54,13 +54,7 @@ More examples using small synthetic logs can be found in
 
 ## Discovery
 
-RBIM follows the recursive structure of the Inductive Miner. At each
-decomposition step it considers the standard process-tree operators:
-
-- XOR
-- Sequence
-- Parallel
-- Loop
+RBIM follows the recursive structure of the Inductive Miner.
 
 Candidate decompositions are checked against the supplied declarative rules.
 When a decomposition is accepted, the relevant rules are projected onto its
