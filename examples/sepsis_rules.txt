@@ -1,0 +1,51 @@
+structural_rules = [
+    InitializationRule("ER Registration"),
+    AtMostOnceRule("ER Registration"),
+    ExistenceRule("ER Triage"),
+    ExistenceRule("ER Sepsis Triage"),
+    AtMostOnceRule("IV Liquid"),
+    AtMostOnceRule("IV Antibiotics"),
+    AtMostOnceRule("Admission NC"),
+    AtMostOnceRule("Admission IC"),
+    AtMostOnceRule("Release A"),
+    AtMostOnceRule("Release B"),
+    AtMostOnceRule("Release C"),
+    AtMostOnceRule("Release D"),
+    AtMostOnceRule("Release E"),
+    NotCoExistenceRule("Release A", "Release B"),
+    NotCoExistenceRule("Release A", "Release C"),
+    NotCoExistenceRule("Release A", "Release D"),
+    NotCoExistenceRule("Release A", "Release E"),
+    NotCoExistenceRule("Release B", "Release C"),
+    NotCoExistenceRule("Release B", "Release D"),
+    NotCoExistenceRule("Release B", "Release E"),
+    NotCoExistenceRule("Release C", "Release D"),
+    NotCoExistenceRule("Release C", "Release E"),
+    NotCoExistenceRule("Release D", "Release E"),
+]
+
+procedural_rules = [
+    ResponseRule("ER Registration", "ER Triage"),
+    ResponseRule("ER Triage", "ER Sepsis Triage"),
+    PrecedenceRule("ER Sepsis Triage", "IV Liquid"),
+    PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
+    CoExistenceRule("IV Liquid", "IV Antibiotics"),
+    PrecedenceRule("ER Sepsis Triage", "Admission NC"),
+    PrecedenceRule("ER Sepsis Triage", "Admission IC"),
+    NotSuccessionRule("Admission IC", "Admission NC"),
+    PrecedenceRule("ER Sepsis Triage", "Release A"),
+    PrecedenceRule("ER Sepsis Triage", "Release B"),
+    PrecedenceRule("ER Sepsis Triage", "Release C"),
+    PrecedenceRule("ER Sepsis Triage", "Release D"),
+    PrecedenceRule("ER Sepsis Triage", "Release E"),
+]
+
+guideline_rules = [
+    PrecedenceRule("ER Sepsis Triage", "IV Antibiotics"),
+    PrecedenceRule("ER Sepsis Triage", "LacticAcid"),
+]
+rule_levels = {
+    "C1": structural_rules,
+    "C2": structural_rules + procedural_rules,
+    "C3": structural_rules + procedural_rules + guideline_rules,
+}
