@@ -55,6 +55,11 @@ def apply(
         if rules
         else None
     )
+
+    if rules:
+        if set(proj_rules[0]) == set(rules) and len(sublog) > len(log):
+            return None
+
     projected_log = [sublog, []]
     return Decomposition(
         operator=Operator.LOOP,

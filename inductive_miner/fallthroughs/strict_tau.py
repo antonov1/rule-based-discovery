@@ -54,6 +54,9 @@ def apply(
         if rules
         else None
     )
+    if rules:
+        if set(proj_rules[0]) == set(rules) and len(sublog) > len(log):
+            return None
     # assert_rules_supported("In STAU (0):", sublog, proj_rules)
 
     projections = [sublog, []]

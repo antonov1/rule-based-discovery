@@ -17,7 +17,6 @@ from rules import (
     AbstractRule,
     ChainPrecedenceRule,
     ChainResponseRule,
-    InitializationRule,
     NotCoExistenceRule,
     PrecedenceRule,
     ResponseRule,
@@ -518,22 +517,17 @@ def detect_rule_based_po(
             f"Start components and end components overlap: {start_components & end_components}"
         )
         return None
-    # Initialization/End as weak global ordering constraints.
-    #
-    # If Initialization(A), then A's block should be before all other blocks
-    # unless this creates a cycle.
 
     for start_component in start_components:
         for other in block_graph.nodes:
             if other != start_component:
                 block_graph.add_edge(start_component, other)
 
-    # If End(F), then all other blocks should be before F's block unless
-    # this creates a cycle.
     for end_component in end_components:
         for other in block_graph.nodes:
             if other != end_component:
                 block_graph.add_edge(other, end_component)
+
     if not nx.is_directed_acyclic_graph(block_graph):
         print(f"Block graph is not a DAG: {block_graph.edges}")
         cyclic_components = set()
@@ -628,49 +622,47 @@ def try_label_splitting(
 ) -> Optional[List[Set[str]]]:
     if not ENABLE_LABEL_SPLITTING:
         return None
-    graph = nx.DiGraph()
-    graph.add_nodes_from(group)
-    boundary_candidates = []
+
+    before = set()
+    after = set()
+
     for rule in rules or []:
-        if isinstance(rule, InitializationRule):
-            boundary_candidates.append(rule.target_activity)
+        if not hasattr(rule, "activity_a"):
+            continue
 
-        elif isinstance(
-            rule,
-            (
-                ResponseRule,
-                ChainResponseRule,
-                PrecedenceRule,
-                ChainPrecedenceRule,
-            ),
-        ):
-            a = rule.activity_a
-            b = rule.activity_b
+        a = rule.activity_a
+        b = rule.activity_b
 
-            if a in group and b in group and a != b:
-                graph.add_edge(a, b)
-    if len(graph.edges) == 0:
+        if a not in group or b not in group or a == b:
+            continue
+
+        if isinstance(rule, (ResponseRule, ChainResponseRule)):
+            # b is required after a
+            after.add(b)
+
+        elif isinstance(rule, (PrecedenceRule, ChainPrecedenceRule)):
+            # a is required before b
+            before.add(a)
+
+    split_candidates = before & after & group
+
+    if not split_candidates:
         return None
-    for scc in nx.strongly_connected_components(graph):
-        if len(scc) <= 1:
-            continue
-        boundary = scc.pop()
-        if len(boundary_candidates) != 0:
-            boundary = boundary_candidates[0]
 
-        middle = set(group) - {boundary}
+    if len(split_candidates) != 1:
+        return None
 
-        if not middle:
-            continue
+    boundary = next(iter(split_candidates))
+    middle = group - {boundary}
 
-        candidate = [
-            {boundary},
-            middle,
-            {boundary},
-        ]
+    if not middle:
+        return None
 
-        return candidate
-    return None
+    return [
+        {boundary},
+        middle,
+        {boundary},
+    ]
 
 
 def po_to_parallel_sequence_branches(
@@ -876,14 +868,9 @@ if __name__ == "__main__":
     from rules import ChainResponseRule, NotCoExistenceRule, PrecedenceRule
     from utils.directly_follows_graph import DirectlyFollowsGraph
 
-    alphabet = {"a", "b", "c", "d"}
+    alphabet = {"a", "c"}
 
-    rules = [
-        ChainResponseRule("a", "b"),
-        ResponseRule("b", "c"),
-        ResponseRule("c", "d"),
-        ResponseRule("d", "a"),
-    ]
+    rules = [ResponseRule("c", "a"), ResponseRule("a", "c")]
 
     log = [
         ["d", "h", "v", "e"],
