@@ -1,7 +1,7 @@
 [project]
 name = "rule-based-discovery"
 version = "0.1.0"
-description = "Add your description here"
+description = "RBIM integrates declarative constraints in the recursive Inductive Miner paradigm."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
