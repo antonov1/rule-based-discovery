@@ -645,9 +645,10 @@ def apply_edit_distance_repair(
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
     if not len(product.final_states):
-        raise Exception(
+        print(
             f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
         )
+        return None
     # We filter out satisfied traces first to avoid unnecessary repair attempts
     for rule in unsat_rules:
         log = rule.repair(log)

@@ -25,12 +25,12 @@ from inductive_miner.im_utils import (
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import preprocess_rule_set
 from rules import *
-
+import pm4py
 from inductive_miner.im_utils import Decomposition, RepairVariant
 from metrics.rule_conformance import conformance as rule_conformance_apply
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -545,13 +545,18 @@ if __name__ == "__main__":
         ResponseRule("q", "f"),
     ]
     log = [["a", "c", "b"]]
+    rules = [
+        ChainResponseRule("a", "c"),
+        ChainResponseRule("b", "c"),
+    ]
+    log = [["a", "c"], ["b", "c"]]
     model = normalize_tree(
-        apply_RBIM(
-            log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.0
-        )
+        apply_RBIM(log, rules, repair_mode=RepairVariant.Naive, noise_threshold=0.0)
     )
+    original_model = apply_IM(log)
     alphabet = {activity for trace in log for activity in trace}
     print(
         f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)[0]:.3f}"
     )
+    print(f"Distance is: {pm4py.structural_similarity(original_model, model)}")
     print(f"Final model is: {model}")
