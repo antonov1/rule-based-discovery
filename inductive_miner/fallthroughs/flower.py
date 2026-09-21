@@ -1,20 +1,9 @@
 from inductive_miner.im_utils import Decomposition
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
-from rules import AtMostOnceRule
-
-
-def same_rules(rules_a, rules_b):
-    return sorted(map(str, rules_a or [])) == sorted(map(str, rules_b or []))
+from rules import AtMostOnceRule, ExistenceRule
 
 
 def build_flower_tree(activities):
-    """
-    Build the terminal flower model:
-
-        *(tau, X(a, b, c, ...))
-
-    No recursive mining is performed below this tree.
-    """
     loop = ProcessTree(operator=Operator.LOOP)
 
     tau = ProcessTree(label=None)
@@ -24,7 +13,7 @@ def build_flower_tree(activities):
     xor.parent = loop
     loop.children = [tau, xor]
 
-    for activity in activities:
+    for activity in sorted(activities):
         leaf = ProcessTree(label=activity)
         leaf.parent = xor
         xor.children.append(leaf)
@@ -32,11 +21,7 @@ def build_flower_tree(activities):
     return loop
 
 
-def apply(
-    log,
-    rules=None,
-    **kwargs,
-):
+def apply(log, rules=None, **kwargs):
     rules = rules or []
 
     activities = sorted({activity for trace in log for activity in trace})
@@ -44,56 +29,64 @@ def apply(
     if len(activities) < 2:
         return None
 
-    at_most_once = {
+    existence_activities = {
+        rule.target_activity
+        for rule in rules
+        if isinstance(rule, ExistenceRule) and rule.target_activity in activities
+    }
+
+    at_most_once_activities = {
         rule.target_activity
         for rule in rules
         if isinstance(rule, AtMostOnceRule) and rule.target_activity in activities
     }
 
-    if at_most_once:
-        remaining = set(activities) - at_most_once
+    constrained_activities = existence_activities | at_most_once_activities
 
-        sublogs = []
-        projected_rules = []
+    if not constrained_activities:
+        return build_flower_tree(activities)
 
-        for activity in sorted(at_most_once):
-            projected_log = [
-                [event for event in trace if event == activity] for trace in log
-            ]
+    remaining_activities = set(activities) - constrained_activities
 
-            sublogs.append(projected_log)
+    sublogs = []
+    projected_rules = []
 
-            projected_rules.append(
-                [
-                    rule
-                    for rule in rules
-                    if isinstance(rule, AtMostOnceRule)
-                    and rule.target_activity == activity
-                ]
+    for activity in sorted(constrained_activities):
+        if activity in existence_activities:
+            synthetic_log = [[activity]]
+        else:
+            synthetic_log = [[], [activity]]
+
+        sublogs.append(synthetic_log)
+
+        activity_rules = [
+            rule
+            for rule in rules
+            if isinstance(rule, (ExistenceRule, AtMostOnceRule))
+            and rule.target_activity == activity
+        ]
+
+        projected_rules.append(activity_rules)
+
+    if remaining_activities:
+        remaining_log = [
+            [event for event in trace if event in remaining_activities] for trace in log
+        ]
+
+        remaining_rules = [
+            rule
+            for rule in rules
+            if not (
+                isinstance(rule, (ExistenceRule, AtMostOnceRule))
+                and rule.target_activity in constrained_activities
             )
+        ]
 
-        if remaining:
-            remaining_log = [
-                [event for event in trace if event in remaining] for trace in log
-            ]
+        sublogs.append(remaining_log)
+        projected_rules.append(remaining_rules)
 
-            sublogs.append(remaining_log)
-
-            remaining_rules = [
-                rule
-                for rule in rules
-                if not (
-                    isinstance(rule, AtMostOnceRule)
-                    and rule.target_activity in at_most_once
-                )
-            ]
-
-            projected_rules.append(remaining_rules)
-
-        return Decomposition(
-            operator=Operator.PARALLEL,
-            sublogs=sublogs,
-            projected_rules=projected_rules,
-        )
-
-    return build_flower_tree(activities)
+    return Decomposition(
+        operator=Operator.PARALLEL,
+        sublogs=sublogs,
+        projected_rules=projected_rules,
+    )

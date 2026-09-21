@@ -30,7 +30,7 @@ from inductive_miner.im_utils import Decomposition, RepairVariant
 from metrics.rule_conformance import conformance as rule_conformance_apply
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = False
+ENABLE_PRINTS = True
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -546,17 +546,24 @@ if __name__ == "__main__":
     ]
     log = [["a", "c", "b"]]
     rules = [
-        ChainResponseRule("a", "c"),
-        ChainResponseRule("b", "c"),
+        NotCoExistenceRule("a", "d"),
+        AtMostOnceRule("j"),
+        ResponseRule("a", "m"),
+        ResponseRule("a", "l"),
+        ResponseRule("i", "l"),
+        ResponseRule("d", "m"),
+        AtMostOnceRule("f"),
     ]
-    log = [["a", "c"], ["b", "c"]]
+    log = pm4py.read_xes("./inductive_miner/log_0.xes")
+    log["time:timestamp"] = pd.to_datetime(
+        log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
+    )
+    log = pm4py.convert_to_dataframe(log)
+
     model = normalize_tree(
         apply_RBIM(log, rules, repair_mode=RepairVariant.Naive, noise_threshold=0.0)
     )
     original_model = apply_IM(log)
     alphabet = {activity for trace in log for activity in trace}
-    print(
-        f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)[0]:.3f}"
-    )
-    print(f"Distance is: {pm4py.structural_similarity(original_model, model)}")
+    print(f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)}")
     print(f"Final model is: {model}")
