@@ -1,7 +1,6 @@
 from typing import Callable, List, Union
 
 import pandas as pd
-import pm4py
 from inductive_miner.cuts.concurrent_cut import ConcurrentCut
 from inductive_miner.cuts.exclusive import ExclusiveChoiceCut
 from inductive_miner.cuts.loop_cut import LoopCut
@@ -479,7 +478,6 @@ def apply_IM(
             )
             print("SOURCE:", "cut")
             print("***")
-
         return mine_decomposition(
             decomposition=decomposition,
             im_function=apply_IM,
@@ -527,33 +525,30 @@ def apply_IM(
     return flower_model(log)
 
 
-import signal
-
-
-class RepairModeTimeout(Exception):
-    pass
-
-
-def timeout_handler(signum, frame):
-    raise RepairModeTimeout()
-
-
-signal.signal(signal.SIGALRM, timeout_handler)
-
-TIMEOUT_SECONDS = 30 * 60
-
 if __name__ == "__main__":
     rules = [
-        PrecedenceRule("d", "a"),
-        EndRule("d"),
-        ChainResponseRule("f", "d"),
-        ResponseRule("c", "k"),
-        RespondedExistenceRule("k", "l"),
-        NotCoExistenceRule("l", "n"),
+        NotCoExistenceRule("ct", "mr"),
+        ResponseRule("mr", "dg"),
+        PrecedenceRule("dg", "tr"),
+        ChainResponseRule("tr", "dc"),
     ]
-    log = pm4py.read_xes("./inductive_miner/log_85.xes")
+    log = [
+        ["rg", "ct", "dg", "tr", "dc"],
+        ["rg", "mr", "dg", "tr", "dc"],
+        ["rg", "dg", "ct", "tr", "dc"],
+        ["rg", "ct", "mr", "tr", "dg", "dc"],
+    ]
+    rules = [
+        ResponseRule("a", "b"),
+        ResponseRule("b", "c"),
+        ExistenceRule("q"),
+        ResponseRule("q", "f"),
+    ]
+    log = [["a", "c", "b"]]
     model = normalize_tree(
-        apply_RBIM(log, rules, repair_mode=RepairVariant.Naive, noise_threshold=0.0)
+        apply_RBIM(
+            log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.0
+        )
     )
     alphabet = {activity for trace in log for activity in trace}
     print(
