@@ -56,8 +56,9 @@ def apply(
         else None
     )
 
-    if set(proj_rules[0]) == set(rules) and len(sublog) > len(log):
-        return None
+    if rules:
+        if set(proj_rules[0]) == set(rules) and len(sublog) > len(log):
+            return None
 
     projected_log = [sublog, []]
     return Decomposition(
