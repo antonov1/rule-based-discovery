@@ -538,15 +538,8 @@ if __name__ == "__main__":
         ["rg", "dg", "ct", "tr", "dc"],
         ["rg", "ct", "mr", "tr", "dg", "dc"],
     ]
-    rules = [
-        ResponseRule("a", "b"),
-        ResponseRule("b", "c"),
-        ExistenceRule("q"),
-        ResponseRule("q", "f"),
-    ]
-    log = [["a", "c", "b"]]
-    rules = [RespondedExistenceRule("n", "o"), ResponseRule("b", "h")]
-    log = pm4py.read_xes("./inductive_miner/log_19.xes")
+    rules = [PrecedenceRule("o", "e"), ExistenceRule("i"), PrecedenceRule("e", "o")]
+    log = pm4py.read_xes("./inductive_miner/log_43.xes")
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
