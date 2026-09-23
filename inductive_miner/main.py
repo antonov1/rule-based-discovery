@@ -538,15 +538,28 @@ if __name__ == "__main__":
         ["rg", "dg", "ct", "tr", "dc"],
         ["rg", "ct", "mr", "tr", "dg", "dc"],
     ]
-    rules = [PrecedenceRule("o", "e"), ExistenceRule("i"), PrecedenceRule("e", "o")]
-    log = pm4py.read_xes("./inductive_miner/log_43.xes")
+    rules = [
+        PrecedenceRule("g", "j"),
+        ChainResponseRule("e", "g"),
+        PrecedenceRule("l", "o"),
+        ChainPrecedenceRule("k", "b"),
+        ChainPrecedenceRule("n", "o"),
+        AtMostOnceRule("i"),
+        ResponseRule("l", "j"),
+        ChainPrecedenceRule("o", "e"),
+        ChainResponseRule("m", "i"),
+    ]
+    log = pm4py.read_xes("./inductive_miner/log_49.xes")
+
     log["time:timestamp"] = pd.to_datetime(
         log["time:timestamp"], unit="s", origin="2024-01-01", utc=True
     )
     log = pm4py.convert_to_dataframe(log)
 
     model = normalize_tree(
-        apply_RBIM(log, rules, repair_mode=RepairVariant.Naive, noise_threshold=0.0)
+        apply_RBIM(
+            log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0
+        )
     )
     original_model = apply_IM(log)
     alphabet = {activity for trace in log for activity in trace}

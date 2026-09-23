@@ -5,7 +5,13 @@ from pm4py.objects.process_tree.obj import ProcessTree
 
 
 def fitness_alignment(log, model: ProcessTree):
-    return calculate_log_fitness_pta(log, model)
+    fit = 0
+    try:
+        fit = calculate_log_fitness_pta(log, model)
+    except Exception:
+        net, im, fm = pm4py.convert_to_petri_net(model)
+        fit = fitness_alignment_pm4py(log, net, im, fm)
+    return fit
 
 
 def fitness_alignment_pm4py(log, net, im, fm):
