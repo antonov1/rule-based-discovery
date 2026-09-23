@@ -376,7 +376,8 @@ def event_level_repair(
     original_event_count = sum(len(trace) for trace in log)
     num_traces_orig = len(log)
     repaired_log = __event_based_log_repair(log, unsat_rules)
-
+    if not repaired_log:
+        return None
     new_rules = supported_rules(repaired_log, original_rules)
 
     repaired_event_count = sum(len(trace) for trace in repaired_log)
