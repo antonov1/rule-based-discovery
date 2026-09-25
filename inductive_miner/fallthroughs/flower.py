@@ -25,9 +25,38 @@ def apply(log, rules=None, **kwargs):
     rules = rules or []
 
     activities = sorted({activity for trace in log for activity in trace})
+    if len(activities) <= 1:
+        rule_acts = {
+            r.target_activity
+            for r in rules
+            if isinstance(r, (ExistenceRule, AtMostOnceRule))
+            and r.target_activity not in activities
+        }
 
-    if len(activities) < 2:
-        return None
+        if not rule_acts:
+            return build_flower_tree(activities)
+
+        tree = ProcessTree(operator=Operator.PARALLEL)
+
+        for act in activities:
+            loop = ProcessTree(operator=Operator.LOOP)
+
+            tau = ProcessTree(label=None)
+            leaf = ProcessTree(label=act)
+
+            tau.parent = loop
+            leaf.parent = loop
+            loop.children = [tau, leaf]
+
+            loop.parent = tree
+            tree.children.append(loop)
+
+        for act in sorted(rule_acts):
+            leaf = ProcessTree(label=act)
+            leaf.parent = tree
+            tree.children.append(leaf)
+
+        return tree
 
     existence_activities = {
         rule.target_activity
