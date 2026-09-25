@@ -250,7 +250,7 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
         and rule.target_activity == activity
         for rule in rules
     )
-
+    has_self_loop = dfg_graph.has_edge(activity, activity)
     if at_most_once:
         if existence:
             return ProcessTree(label=activity)
@@ -262,6 +262,14 @@ def _build_single_activity_tree(log, dfg_graph, nodes, rules, **kwargs) -> Proce
         event.parent = root
         root.children = [tau, event]
         return root
+    if existence:
+        if not has_self_loop:
+            return ProcessTree(label=activity)
+
+        return _build_loop_tree(
+            do_first=activity,
+            redo=activity,
+        )
     if not dfg_graph.has_edge(activity, activity):
         unsat_rules = []
         for r in rules:
