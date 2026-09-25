@@ -4,6 +4,7 @@ import tempfile
 
 import pm4py
 import streamlit as st
+from inductive_miner.im_utils import RepairVariant
 from inductive_miner.main import apply_RBIM
 from llm_connection.query import query_llm_for_declare_rules
 from metrics.fitness import fitness_token_based_tree as fitness_token_based
@@ -29,6 +30,13 @@ from utils.preprocess import preprocess_log
 STRATEGY_OPTIONS = {"From Data": "DATA", "From Text": "TEXT"}
 TEMP_FOLDER = "/tmp/rim_uploads"
 
+REPAIR_OPTIONS = {
+    "No Repair": RepairVariant.Naive,
+    "Trace Level": RepairVariant.TraceLevel,
+    "Event Level": RepairVariant.EventLevel,
+    "Edit Distance": RepairVariant.EditDistance,
+}
+
 
 def get_children_activities(tree):
     activities = set()
@@ -38,6 +46,14 @@ def get_children_activities(tree):
         for child in tree.children:
             activities.update(get_children_activities(child))
     return activities
+
+
+def reset_process_discovery_model():
+    """
+    Re-discover the model when a discovery parameter changes.
+    """
+    st.session_state.pop("model", None)
+    st.session_state.pop("stats", None)
 
 
 def get_relevant_rules(activities, rules):
@@ -188,6 +204,10 @@ def initialization():
         ]
     if "text_rule_description" not in st.session_state:
         st.session_state["text_rule_description"] = ""
+    if "repair_mode" not in st.session_state:
+        st.session_state["repair_mode"] = "No Repair"
+    if "noise_threshold" not in st.session_state:
+        st.session_state["noise_threshold"] = 0.0
 
 
 def setup_llm_connection():
@@ -651,7 +671,7 @@ def miner_page():
     initialization()
 
     with st.sidebar:
-        st.markdown("### ⚒️ Process Discovery")
+        st.markdown("### ⚒️ Rule-Based Inductive Miner")
         st.divider()
         render_sidebar_progress()
 
@@ -697,24 +717,105 @@ def miner_page():
         )
 
         st.markdown("### 3. Process Discovery 🏗️")
-        st.caption("Convert discovered rules into a visual process model.")
-        if "model" not in st.session_state:
-            pass
+        st.caption(
+            "Configure RBIM and generate a "
+            "process model based on the selected rules."
+        )
+        with st.container(border=True):
+            st.markdown("#### ⚙️ Discovery Settings")
 
-            st.session_state["model"] = apply_RBIM(
-                log=preprocess_log(st.session_state["event_log"]),
-                rules=st.session_state["used_rules"],
+            col1, col2 = st.columns(2)
+
+            with col1:
+                repair_selection = st.selectbox(
+                    "Repair Mechanism",
+                    options=list(REPAIR_OPTIONS.keys()),
+                    key="repair_mode",
+                    help=(
+                        "Choose how RBIM handles non-conforming behavior "
+                        "when the selected rules cannot be satisfied directly."
+                    ),
+                )
+
+            with col2:
+                noise_threshold = st.slider(
+                    "Noise Threshold",
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.05,
+                    key="noise_threshold",
+                    help=(
+                        "Controls how aggressively infrequent behavior "
+                        "is filtered during process discovery."
+                    ),
+                )
+
+            repair_descriptions = {
+                "No Repair": (
+                    "**No Repair — Standard RBIM.** " "Does not modify the event log."
+                ),
+                "Trace Level": (
+                    "**Trace Level.** "
+                    "Removes complete traces that are non-conforming."
+                ),
+                "Event Level": (
+                    "**Event Level.** " "Removes events that are non-conforming."
+                ),
+                "Edit Distance": (
+                    "**Edit Distance.** "
+                    "Adds and removes events to repair non-conforming behavior."
+                ),
+            }
+
+            st.info(repair_descriptions[repair_selection])
+
+            st.caption(
+                f"Selected: **{repair_selection}** repair · "
+                f"Noise threshold: **{noise_threshold:.2f}**"
             )
 
+            discover_clicked = st.button(
+                "Discover Model ⚡",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if discover_clicked:
+            repair_mode = REPAIR_OPTIONS[repair_selection]
+
+            # Clear everything belonging to the previous model.
+            st.session_state.pop("model", None)
+            st.session_state.pop("stats", None)
+
+            with st.spinner("Discovering process model..."):
+                try:
+                    model = apply_RBIM(
+                        log=preprocess_log(st.session_state["event_log"]),
+                        rules=st.session_state["used_rules"],
+                        repair_mode=repair_mode,
+                        noise_threshold=noise_threshold,
+                    )
+
+                    st.session_state["model"] = model
+
+                    # Store the EXACT parameters that produced this model.
+                    st.session_state["model_repair_mode"] = repair_selection
+
+                    st.session_state["model_noise_threshold"] = noise_threshold
+
+                except Exception as e:
+                    st.session_state.pop("model", None)
+                    st.session_state.pop("stats", None)
+
+                    st.error(f"Process discovery failed: {e}")
+
         if "model" not in st.session_state or st.session_state["model"] is None:
-            st.warning("No model discovered with current parameters")
+            st.info("Configure the discovery settings and click " "**Discover Model**.")
             return
-        activities = get_children_activities(st.session_state["model"])
-        relevant_rules = get_relevant_rules(activities, st.session_state["used_rules"])
-        with st.expander("Relevant rules"):
-            for rule in relevant_rules:
+
+        with st.expander("Selected rules"):
+            for rule in st.session_state["used_rules"]:
                 st.markdown(f"- {rule}")
-                st.write("")
         viz_col1, _ = st.columns([2, 1])
 
         with viz_col1:
@@ -730,7 +831,7 @@ def miner_page():
             stats = compute_metrics(
                 st.session_state["model"],
                 st.session_state["event_log"],
-                relevant_rules,
+                st.session_state["used_rules"],
                 net,
             )
             st.session_state["stats"] = stats

@@ -99,11 +99,11 @@ def detect_groups(
         component_u = coloring.get(u)
         component_v = coloring.get(v)
         if component_u is None or component_v is None:
-            raise ValueError(
+            print(
                 f"Negative edge between {u} and {v} cannot be processed because one of the nodes is not in the positive graph"
             )
         if component_u == component_v:
-            raise ValueError(
+            print(
                 f"Conflict between positive and negative rules for activities {u} and {v}"
             )
         component_negative_graph.add_edge(component_u, component_v)
@@ -183,7 +183,7 @@ def apply(
 
     positive_graph, negative_graph = build_signed_cdg(rules, alphabet)
     groups = detect_groups(positive_graph, negative_graph)
-    if len(groups) <= 1:
+    if not groups or len(groups) <= 1:
         # inapplicable
         return None
     projected_logs = project(log, groups)

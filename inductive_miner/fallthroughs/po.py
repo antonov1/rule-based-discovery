@@ -399,11 +399,11 @@ def handle_chain_components(
     condensed_graph.add_nodes_from(range(len(merged_groups)))
     condensed_graph.add_edges_from(merged_edges)
 
-    if len(merged_groups) <= 1:
-        # Nothing can be done
-        print(f"Merged groups are too few: {merged_groups}")
+    # if len(merged_groups) <= 1:
+    # Nothing can be done
+    #   print(f"Merged groups are too few: {merged_groups}")
 
-        return None
+    #    return None
     try:
         reduced_graph = nx.transitive_reduction(condensed_graph)
 
@@ -477,8 +477,8 @@ def detect_rule_based_po(
     print(f"Start nodes are: {start_nodes}")
     print(f"End nodes are: {end_nodes}")
 
-    if activity_graph.number_of_edges() == 0 and not start_nodes and not end_nodes:
-        return None
+    # if activity_graph.number_of_edges() == 0 and not start_nodes and not end_nodes:
+    #    return None
     # if not nx.is_directed_acyclic_graph(activity_graph):
     #    return None
 

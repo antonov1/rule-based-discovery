@@ -376,7 +376,8 @@ def event_level_repair(
     original_event_count = sum(len(trace) for trace in log)
     num_traces_orig = len(log)
     repaired_log = __event_based_log_repair(log, unsat_rules)
-
+    if not repaired_log:
+        return None
     new_rules = supported_rules(repaired_log, original_rules)
 
     repaired_event_count = sum(len(trace) for trace in repaired_log)
@@ -645,9 +646,10 @@ def apply_edit_distance_repair(
     automata_by_rule = {r: r.to_automaton(alphabet=set(alphabet)) for r in rules}
     product = product_automaton(rules, alphabet, automata_by_rule)
     if not len(product.final_states):
-        raise Exception(
+        print(
             f"Product automaton is empty, cannot apply edit distance repair. Automaton: {product}"
         )
+        return None
     # We filter out satisfied traces first to avoid unnecessary repair attempts
     for rule in unsat_rules:
         log = rule.repair(log)

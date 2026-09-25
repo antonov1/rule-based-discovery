@@ -25,12 +25,11 @@ from inductive_miner.im_utils import (
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import preprocess_rule_set
 from rules import *
-
 from inductive_miner.im_utils import Decomposition, RepairVariant
 from metrics.rule_conformance import conformance as rule_conformance_apply
 from utils.directly_follows_graph import DirectlyFollowsGraph
 
-ENABLE_PRINTS = True
+ENABLE_PRINTS = False
 
 
 def preprocess_log(log, activity_key="concept:name", case_key="case:concept:name"):
@@ -538,20 +537,12 @@ if __name__ == "__main__":
         ["rg", "dg", "ct", "tr", "dc"],
         ["rg", "ct", "mr", "tr", "dg", "dc"],
     ]
-    rules = [
-        ResponseRule("a", "b"),
-        ResponseRule("b", "c"),
-        ExistenceRule("q"),
-        ResponseRule("q", "f"),
-    ]
-    log = [["a", "c", "b"]]
     model = normalize_tree(
         apply_RBIM(
-            log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.0
+            log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.2
         )
     )
+    original_model = apply_IM(log)
     alphabet = {activity for trace in log for activity in trace}
-    print(
-        f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)[0]:.3f}"
-    )
+    print(f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)}")
     print(f"Final model is: {model}")
