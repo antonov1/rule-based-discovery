@@ -1,10 +1,11 @@
+import copy
 import math
 import os
 import tempfile
 
 import pm4py
 import streamlit as st
-from inductive_miner.im_utils import RepairVariant
+from inductive_miner.im_utils import normalize_tree, RepairVariant
 from inductive_miner.main import apply_RBIM
 from llm_connection.query import query_llm_for_declare_rules
 from metrics.fitness import fitness_token_based_tree as fitness_token_based
@@ -36,6 +37,12 @@ REPAIR_OPTIONS = {
     "Event Level": RepairVariant.EventLevel,
     "Edit Distance": RepairVariant.EditDistance,
 }
+
+
+def clear_all_filters(activities, rule_types):
+    st.session_state["activity_filter"] = list(activities)
+    st.session_state["rule_type_filter"] = list(rule_types)
+    reset_selection_on_filter()
 
 
 def get_children_activities(tree):
@@ -72,13 +79,16 @@ def get_relevant_rules(activities, rules):
 def compute_metrics(model, log, rules, net):
     fitness = fitness_token_based(log, model)
     precision = precision_token_based(log, model)
-    complexity = complexity_size(net)
     alphabet = set(log["concept:name"].unique())
+    activity_coverage = (
+        len(get_children_activities(model)) / len(alphabet) if len(alphabet) > 0 else 0
+    )
+    complexity_size(net)
     rule_conformance = rule_conformance_apply(model, rules if rules else [], alphabet)
     return {
         "fitness": fitness,
         "precision": precision,
-        "complexity": complexity,
+        "act_coverage": activity_coverage,
         "rule_conformance": rule_conformance,
     }
 
@@ -140,6 +150,7 @@ def render_sidebar_progress():
         if st.button("⬅ Back", use_container_width=True):
             st.session_state["current_step"] -= 1
             if st.session_state["current_step"] == 2:
+                st.session_state["selection_version"] += 1
                 st.session_state["discovery_strategy"] = st.session_state.get(
                     "locked_discovery_strategy",
                     st.session_state.get("discovery_strategy", "From Data"),
@@ -214,7 +225,7 @@ def setup_llm_connection():
     def on_provider_change():
         st.session_state["model_name"] = AI_MODEL_DEFAULTS[st.session_state["provider"]]
 
-    st.markdown("## ⚙️ Connection Setup")
+    st.markdown("### ⚙️ 1. Connection Setup")
 
     with st.container(border=True):
         st.markdown("### 🔑 API Configuration")
@@ -278,7 +289,7 @@ def rule_discovery():
         if st.session_state.get("llm_credentials")
         else ["From Data"]
     )
-    st.markdown("### 🔍 2. Rule Discovery")
+    st.markdown("### 🔍 3. Rule Discovery")
     if "discovered_rules" not in st.session_state:
         st.session_state["discovered_rules"] = []
     # --- Settings Area ---
@@ -296,7 +307,10 @@ def rule_discovery():
                 st.session_state["last_discovery_strategy"] = strategy
                 st.rerun()
 
-            disabled = strategy != "From Data"
+            disabled = (
+                len(st.session_state["discovered_rules"]) == 0
+                or strategy != "From Data"
+            )
         with c2:
             support_val = st.number_input(
                 "Min. Support", 0.01, 0.99, 0.50, disabled=disabled
@@ -404,47 +418,40 @@ def rule_discovery():
         if "selected_types" not in st.session_state:
             st.session_state["selected_types"] = set()
         action_col1, action_col2 = st.columns([2, 2])
-        disabled = (
-            len(st.session_state["discovered_rules"]) == 0 or strategy != "From Data"
-        )
+        disabled = len(st.session_state["discovered_rules"]) <= 1
         with action_col1:
-            if strategy == "From Data":
-                with st.popover(
-                    "🔍 Filter Discovery Results",
-                    use_container_width=True,
-                    disabled=disabled,
-                ):
-                    # We use key to link all rules to the session state accessed in Step 2
-                    st.multiselect(
-                        "Activities",
-                        options=activities,
-                        default=activities,
-                        key="activity_filter",
-                        on_change=reset_selection_on_filter,
-                    )
-                    st.multiselect(
-                        "Rule Types",
-                        options=rule_types,
-                        default=rule_types,
-                        key="rule_type_filter",
-                        on_change=reset_selection_on_filter,
-                    )
-
-                    if st.button(
-                        "Clear All Filters", use_container_width=True, disabled=disabled
-                    ):
-                        # Reset the keys in session state specifically
-                        st.session_state["activity_filter"] = activities
-                        st.session_state["rule_type_filter"] = rule_types
-                        st.session_state["selected_rules"] = set()
-                        st.rerun()
-            else:
-                st.button(
-                    "🔍 Filter Discovery Results",
-                    use_container_width=True,
-                    disabled=True,
-                    help="Filtering is only available for rules mined from data.",
+            with st.popover(
+                "🔍 Filter Discovery Results",
+                use_container_width=True,
+                disabled=disabled,
+            ):
+                # We use key to link all rules to the session state accessed in Step 2
+                st.multiselect(
+                    "Activities",
+                    options=activities,
+                    default=activities,
+                    key="activity_filter",
+                    on_change=reset_selection_on_filter,
                 )
+                st.multiselect(
+                    "Rule Types",
+                    options=rule_types,
+                    default=rule_types,
+                    key="rule_type_filter",
+                    on_change=reset_selection_on_filter,
+                )
+
+                filters_changed = set(st.session_state["activity_filter"]) != set(
+                    activities
+                ) or set(st.session_state["rule_type_filter"]) != set(rule_types)
+
+                if filters_changed:
+                    st.button(
+                        "Clear All Filters",
+                        use_container_width=True,
+                        on_click=clear_all_filters,
+                        args=(activities, rule_types),
+                    )
         with action_col2:
             with st.popover("🛠️ Selection Tools", use_container_width=True):
                 st.markdown("##### Bulk Actions")
@@ -570,7 +577,7 @@ def rule_discovery():
                 f"Items selected for Process Discovery: **{len(st.session_state['selected_rules'])}**"
             )
         with col_right:
-            if st.button("Proceed to Stage 3 →", type="primary"):
+            if st.button("Proceed to Stage 4 →", type="primary"):
                 st.toast(
                     "Rules locked in! Moving to Process Discovery stage.", icon="🚀"
                 )
@@ -587,8 +594,8 @@ def rule_discovery():
 
                 rule_by_id = {str(r): r for r in st.session_state["discovered_rules"]}
                 st.session_state["used_rules"] = [
-                    rule_by_id[rid]
-                    for rid in st.session_state["selected_rules"]
+                    copy.deepcopy(rule_by_id[rid])
+                    for rid in sorted(st.session_state["selected_rules"])
                     if rid in rule_by_id
                 ]
                 st.session_state.pop("model", None)
@@ -625,7 +632,7 @@ def bulk_action(mode, filtered_rules_list):
 
 
 def upload_data():
-    st.markdown("### 1. Data Upload 📥")
+    st.markdown("### 2. Data Upload 📥")
     st.markdown(
         '<p class="upload-hint">Upload XES or GZ files to let the agent begin rule extraction.</p>',
         unsafe_allow_html=True,
@@ -671,7 +678,7 @@ def miner_page():
     initialization()
 
     with st.sidebar:
-        st.markdown("### ⚒️ Rule-Based Inductive Miner")
+        st.markdown("### Rule-Based Inductive Miner")
         st.divider()
         render_sidebar_progress()
 
@@ -689,34 +696,18 @@ def miner_page():
             )
 
     if st.session_state["current_step"] == 0:
-        st.markdown(
-            '<div class="workbench-header">⚒️ Connection Setup </div>',
-            unsafe_allow_html=True,
-        )
 
         setup_llm_connection()
     if st.session_state["current_step"] == 1:
-        st.markdown(
-            '<div class="workbench-header">⚒️ Data Upload </div>',
-            unsafe_allow_html=True,
-        )
 
         upload_data()
 
     if st.session_state["current_step"] == 2:
-        st.markdown(
-            '<div class="workbench-header">⚒️ Rule Mining </div>',
-            unsafe_allow_html=True,
-        )
         # remove the model from state if present
         rule_discovery()
     if st.session_state["current_step"] == 3:
-        st.markdown(
-            '<div class="workbench-header">⚒️ Process Discovery </div>',
-            unsafe_allow_html=True,
-        )
 
-        st.markdown("### 3. Process Discovery 🏗️")
+        st.markdown("### 4. Process Discovery 🏗️")
         st.caption(
             "Configure RBIM and generate a "
             "process model based on the selected rules."
@@ -789,13 +780,16 @@ def miner_page():
 
             with st.spinner("Discovering process model..."):
                 try:
-                    model = apply_RBIM(
-                        log=preprocess_log(st.session_state["event_log"]),
-                        rules=st.session_state["used_rules"],
-                        repair_mode=repair_mode,
-                        noise_threshold=noise_threshold,
+                    model = normalize_tree(
+                        apply_RBIM(
+                            log=copy.deepcopy(
+                                preprocess_log(st.session_state["event_log"])
+                            ),
+                            rules=copy.deepcopy(st.session_state["used_rules"]),
+                            repair_mode=repair_mode,
+                            noise_threshold=noise_threshold,
+                        )
                     )
-
                     st.session_state["model"] = model
 
                     # Store the EXACT parameters that produced this model.
@@ -849,8 +843,8 @@ def miner_page():
                 <div class="metric-value">{st.session_state['stats']['precision']:.3f}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Complexity</div>
-                <div class="metric-value">{st.session_state['stats']['complexity']}</div>
+                <div class="metric-label">Activity Coverage</div>
+                <div class="metric-value">{st.session_state['stats']['act_coverage']:.3f}</div>
             </div>
             <div class="metric-card">
                 <div class="metric-label">Rule Conformance</div>

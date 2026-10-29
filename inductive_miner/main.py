@@ -25,6 +25,7 @@ from inductive_miner.im_utils import (
 from pm4py.objects.process_tree.obj import Operator, ProcessTree
 from rules.rule_utils import preprocess_rule_set
 from rules import *
+import pm4py
 from inductive_miner.im_utils import Decomposition, RepairVariant
 from metrics.rule_conformance import conformance as rule_conformance_apply
 from utils.directly_follows_graph import DirectlyFollowsGraph
@@ -542,7 +543,10 @@ if __name__ == "__main__":
             log, rules, repair_mode=RepairVariant.EditDistance, noise_threshold=0.2
         )
     )
-    original_model = apply_IM(log)
+    log = [["a", "c", "c"], ["c", "a", "c"]]
+    log = traces_to_log(log)
+    original_model = pm4py.discover_process_tree_inductive(log)
+    print(f"Original model is: {original_model}")
     alphabet = {activity for trace in log for activity in trace}
     print(f"Rule conformance is: {rule_conformance_apply(model, rules, alphabet)}")
     print(f"Final model is: {model}")
