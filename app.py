@@ -634,7 +634,7 @@ def bulk_action(mode, filtered_rules_list):
 def upload_data():
     st.markdown("### 2. Data Upload 📥")
     st.markdown(
-        '<p class="upload-hint">Upload XES or GZ files to let the agent begin rule extraction.</p>',
+        '<p class="upload-hint">Upload XES or GZ files to start with rule extraction.</p>',
         unsafe_allow_html=True,
     )
 
